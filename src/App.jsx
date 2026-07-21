@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, CheckCircle2, Circle, X, ArrowLeft } from 'lucide-react';
+import { Trash2, Plus, CheckCircle2, Circle, X, ArrowLeft, Heart } from 'lucide-react';
+
+const MAX_HEARTS = 7;
+const HEART_LOSS_PER_FAIL = 0.25;
 
 export default function YuYuApp() {
   const [section, setSection] = useState('hub');
@@ -19,6 +22,10 @@ export default function YuYuApp() {
   const [expandedProjects, setExpandedProjects] = useState({});
   const [newProjectNameTodoist, setNewProjectNameTodoist] = useState('');
   const [showNewProjectInput, setShowNewProjectInput] = useState(false);
+  const [virtueGroups, setVirtueGroups] = useState([]);
+  const [selectedVirtueGroup, setSelectedVirtueGroup] = useState(null);
+  const [newVirtueGroupName, setNewVirtueGroupName] = useState('');
+  const [hearts, setHearts] = useState(MAX_HEARTS);
 
   const categories = [
     { id: 'goals', label: 'Ziel', labelPlural: 'Ziele', startAngle: 0, endAngle: 90 },
@@ -36,7 +43,7 @@ export default function YuYuApp() {
 
   useEffect(() => {
     saveData();
-  }, [items, projects]);
+  }, [items, projects, virtueGroups, hearts]);
 
   const loadData = () => {
     try {
@@ -44,6 +51,10 @@ export default function YuYuApp() {
       if (saved) setItems(JSON.parse(saved));
       const projectsSaved = localStorage.getItem('yuyu-projects');
       if (projectsSaved) setProjects(JSON.parse(projectsSaved));
+      const virtueGroupsSaved = localStorage.getItem('yuyu-virtue-groups');
+      if (virtueGroupsSaved) setVirtueGroups(JSON.parse(virtueGroupsSaved));
+      const heartsSaved = localStorage.getItem('yuyu-hearts');
+      if (heartsSaved !== null) setHearts(JSON.parse(heartsSaved));
     } catch (err) {
       console.error('Konnte gespeicherte Daten nicht laden:', err);
     }
@@ -52,20 +63,48 @@ export default function YuYuApp() {
   const saveData = () => {
     localStorage.setItem('yuyu-items', JSON.stringify(items));
     localStorage.setItem('yuyu-projects', JSON.stringify(projects));
+    localStorage.setItem('yuyu-virtue-groups', JSON.stringify(virtueGroups));
+    localStorage.setItem('yuyu-hearts', JSON.stringify(hearts));
   };
 
   const addItem = () => {
     if (!newItemName.trim()) return;
-    setItems([...items, {
+    const newItem = {
       id: Date.now(),
       type: section,
       name: newItemName,
-      level: 1,
+      level: 0,
       experience: 0,
       maxExperience: 100,
       createdAt: new Date().toISOString(),
-    }]);
+    };
+    if (section === 'principles' && selectedVirtueGroup) {
+      newItem.groupId = selectedVirtueGroup;
+    }
+    setItems([...items, newItem]);
     setNewItemName('');
+  };
+
+  // Tugend-Oberkategorien (z.B. "Old Money") gruppieren einzelne Tugenden
+  const addVirtueGroup = () => {
+    if (!newVirtueGroupName.trim()) return;
+    setVirtueGroups([...virtueGroups, {
+      id: Date.now(),
+      name: newVirtueGroupName,
+      createdAt: new Date().toISOString(),
+    }]);
+    setNewVirtueGroupName('');
+  };
+
+  const deleteVirtueGroup = (id) => {
+    setVirtueGroups(virtueGroups.filter(g => g.id !== id));
+    // Tugenden bleiben erhalten, werden aber wieder zu "ohne Kategorie"
+    setItems(items.map(i => (i.groupId === id ? { ...i, groupId: undefined } : i)));
+    if (selectedVirtueGroup === id) setSelectedVirtueGroup(null);
+  };
+
+  const loseHeart = () => {
+    setHearts(prev => Math.max(0, Math.round((prev - HEART_LOSS_PER_FAIL) * 100) / 100));
   };
 
   const addProject = () => {
@@ -149,6 +188,23 @@ export default function YuYuApp() {
     }));
   };
 
+  // Aufgabe als gescheitert markieren: kostet ein Viertel-Herz
+  const failTodo = (projectId, todoId) => {
+    const project = projects.find(p => p.id === projectId);
+    const todo = project?.todos.find(t => t.id === todoId);
+    if (!todo || todo.completed || todo.failed) return;
+    setProjects(projects.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          todos: p.todos.map(t => (t.id === todoId ? { ...t, failed: true } : t))
+        };
+      }
+      return p;
+    }));
+    loseHeart();
+  };
+
   const gainExperience = (itemIds, amount) => {
     setItems(items.map(item => {
       if (itemIds.includes(item.id)) {
@@ -170,6 +226,14 @@ export default function YuYuApp() {
     setItems(items.filter(i => i.id !== id));
   };
 
+  // Ziel als gescheitert markieren: kostet ein Viertel-Herz
+  const failItem = (id) => {
+    const item = items.find(i => i.id === id);
+    if (!item || item.failed) return;
+    setItems(items.map(i => (i.id === id ? { ...i, failed: true } : i)));
+    loseHeart();
+  };
+
   const toggleSelectItem = (id) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
@@ -180,12 +244,18 @@ export default function YuYuApp() {
     setSelectionMode(false);
   };
 
+  // Welche Items gerade sichtbar/sortierbar sind: bei Tugenden zusätzlich nach Oberkategorie gefiltert
+  const itemInScope = (i) => {
+    if (section !== 'principles') return i.type === section;
+    return i.type === 'principles' && (selectedVirtueGroup ? i.groupId === selectedVirtueGroup : !i.groupId);
+  };
+
   // Tugend per Drag & Drop an neue Position im Ranking der Kategorie verschieben
   const reorderItems = (draggedItemId, targetItemId) => {
     if (draggedItemId === targetItemId) return;
     setItems(prev => {
-      const sameType = prev.filter(i => i.type === section);
-      const otherType = prev.filter(i => i.type !== section);
+      const sameType = prev.filter(itemInScope);
+      const otherType = prev.filter(i => !itemInScope(i));
       const fromIdx = sameType.findIndex(i => i.id === draggedItemId);
       const toIdx = sameType.findIndex(i => i.id === targetItemId);
       if (fromIdx === -1 || toIdx === -1) return prev;
@@ -221,8 +291,8 @@ export default function YuYuApp() {
   // Tugend/Item innerhalb seiner Kategorie nach links/rechts verschieben
   const moveItem = (id, direction) => {
     setItems(prev => {
-      const sameType = prev.filter(i => i.type === section);
-      const otherType = prev.filter(i => i.type !== section);
+      const sameType = prev.filter(itemInScope);
+      const otherType = prev.filter(i => !itemInScope(i));
       const idx = sameType.findIndex(i => i.id === id);
       if (idx === -1) return prev;
       const newIdx = idx + direction;
@@ -269,7 +339,8 @@ export default function YuYuApp() {
     }));
   };
 
-  const sectionItems = items.filter(i => i.type === section);
+  const sectionItems = items.filter(itemInScope);
+  const currentVirtueGroup = virtueGroups.find(g => g.id === selectedVirtueGroup);
 
   // Text in mehrere Zeilen umbrechen, damit er ins Puzzleteil passt
   const wrapPuzzleText = (name, maxCharsPerLine = 11) => {
@@ -361,6 +432,25 @@ export default function YuYuApp() {
     ].join(' ');
   };
 
+  // Herz-Leiste: character-weite Lebensanzeige, verliert 1/4 Herz pro gescheitertem Ziel/Aufgabe
+  const renderHearts = () => {
+    const icons = [];
+    for (let i = 0; i < MAX_HEARTS; i++) {
+      const fill = Math.max(0, Math.min(1, hearts - i));
+      icons.push(
+        <div key={i} className="relative w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0">
+          <Heart className="absolute inset-0 w-full h-full text-slate-200" fill="currentColor" strokeWidth={0} />
+          {fill > 0 && (
+            <div className="absolute inset-0 overflow-hidden" style={{ width: `${fill * 100}%` }}>
+              <Heart className="w-4 h-4 sm:w-5 sm:h-5 text-red-500" fill="currentColor" strokeWidth={0} />
+            </div>
+          )}
+        </div>
+      );
+    }
+    return icons;
+  };
+
   // HUB VIEW
   if (section === 'hub') {
     return (
@@ -430,8 +520,8 @@ export default function YuYuApp() {
             })}
 
             {/* Center circle - clickable für Prinzipien */}
-            <circle cx="250" cy="250" r="140" fill="white" stroke="#7c9fd6" strokeWidth="1.5" onClick={() => setSection('principles')} className="cursor-pointer hover:fill-slate-50 transition" />
-            <circle cx="250" cy="250" r="135" fill="#f8fafc" onClick={() => setSection('principles')} className="cursor-pointer hover:fill-slate-50 transition" />
+            <circle cx="250" cy="250" r="140" fill="white" stroke="#7c9fd6" strokeWidth="1.5" onClick={() => { setSelectedVirtueGroup(null); setSection('principles'); }} className="cursor-pointer hover:fill-slate-50 transition" />
+            <circle cx="250" cy="250" r="135" fill="#f8fafc" onClick={() => { setSelectedVirtueGroup(null); setSection('principles'); }} className="cursor-pointer hover:fill-slate-50 transition" />
 
             {/* Center text - schwarz */}
             <text x="250" y="245" textAnchor="middle" dy="0.3em" fill="#000000" fontSize="14" fontWeight="300" pointerEvents="none" letterSpacing="2">
@@ -474,7 +564,7 @@ export default function YuYuApp() {
       setShowNewProjectInput(false);
     };
 
-    const allTasksCount = projects.reduce((sum, p) => sum + p.todos.filter(t => !t.completed).length, 0);
+    const allTasksCount = projects.reduce((sum, p) => sum + p.todos.filter(t => !t.completed && !t.failed).length, 0);
 
     return (
       <div className="min-h-screen bg-white">
@@ -531,8 +621,9 @@ export default function YuYuApp() {
               <p className="text-slate-400 text-sm font-light text-center py-12">Noch keine Aufgaben — leg los ✍️</p>
             ) : (
               projects.map(project => {
-                const openTodos = project.todos.filter(t => !t.completed);
+                const openTodos = project.todos.filter(t => !t.completed && !t.failed);
                 const doneTodos = project.todos.filter(t => t.completed);
+                const failedTodos = project.todos.filter(t => t.failed);
                 const isExpanded = expandedProjects[project.id] !== false; // default open
 
                 return (
@@ -584,6 +675,13 @@ export default function YuYuApp() {
                             </button>
                             <span className="flex-1 text-sm font-light text-slate-900">{todo.text}</span>
                             <button
+                              onClick={() => failTodo(project.id, todo.id)}
+                              title="Als gescheitert markieren"
+                              className="p-1.5 -m-1.5 text-slate-300 hover:text-orange-500 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                            <button
                               onClick={() => deleteTodo(project.id, todo.id)}
                               className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
                             >
@@ -591,6 +689,24 @@ export default function YuYuApp() {
                             </button>
                           </div>
                         ))}
+
+                        {/* Gescheiterte Aufgaben */}
+                        {failedTodos.length > 0 && (
+                          <div className="pt-1">
+                            {failedTodos.map(todo => (
+                              <div key={todo.id} className="flex items-center gap-3 py-1.5 px-1 group/task">
+                                <X className="w-4 h-4 text-orange-400 flex-shrink-0" strokeWidth={1.5} />
+                                <span className="flex-1 text-sm font-light text-slate-400 line-through">{todo.text}</span>
+                                <button
+                                  onClick={() => deleteTodo(project.id, todo.id)}
+                                  className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Erledigte Aufgaben */}
                         {doneTodos.length > 0 && (
@@ -653,22 +769,82 @@ export default function YuYuApp() {
     <div className="min-h-screen bg-white p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6 pb-4 sm:mb-12 sm:pb-8 border-b border-slate-200">
-          <div className="flex items-center gap-3 sm:gap-6">
-            <button
-              onClick={() => setSection('hub')}
-              className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
-            >
-              <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
-            </button>
-            <div>
-              <h1 className="text-2xl sm:text-4xl font-light text-slate-900 tracking-tight">
-                {currentCategory?.label}
-              </h1>
-              <p className="text-sm text-slate-400 font-light mt-1">{sectionItems.length} {sectionItems.length === 1 ? currentCategory?.label : currentCategory?.labelPlural}</p>
-            </div>
+        <div className="flex items-start gap-3 sm:gap-6 mb-6 pb-4 sm:mb-12 sm:pb-8 border-b border-slate-200">
+          <button
+            onClick={() => {
+              if (section === 'principles' && selectedVirtueGroup) {
+                setSelectedVirtueGroup(null);
+              } else {
+                setSection('hub');
+              }
+            }}
+            className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
+          >
+            <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
+          </button>
+          <div>
+            <h1 className="text-2xl sm:text-4xl font-light text-slate-900 tracking-tight">
+              {section === 'principles' && currentVirtueGroup ? currentVirtueGroup.name : currentCategory?.label}
+            </h1>
+            <p className="text-sm text-slate-400 font-light mt-1">{sectionItems.length} {sectionItems.length === 1 ? currentCategory?.label : currentCategory?.labelPlural}</p>
+
+            {/* Herzen: character-weite Lebensanzeige, oben auf der Tugend-Hauptseite */}
+            {section === 'principles' && !selectedVirtueGroup && (
+              <div className="mt-3">
+                <div className="flex gap-0.5 sm:gap-1">{renderHearts()}</div>
+                <p className="text-[10px] sm:text-xs text-slate-400 font-light mt-1">{Number(hearts.toFixed(2))} / {MAX_HEARTS} Herzen</p>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Tugend-Oberkategorien: eigene Gruppen, in die man Tugenden einsortieren kann */}
+        {section === 'principles' && !selectedVirtueGroup && (
+          <div className="mb-8 sm:mb-10">
+            <div className="flex items-center gap-2 max-w-sm mb-4">
+              <input
+                type="text"
+                value={newVirtueGroupName}
+                onChange={(e) => setNewVirtueGroupName(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && addVirtueGroup()}
+                placeholder="Neue Oberkategorie (z.B. Old Money)"
+                className="flex-1 min-w-0 px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+              />
+              <button onClick={addVirtueGroup} className="text-sm text-blue-600 hover:text-blue-700 font-light flex-shrink-0">
+                Add
+              </button>
+            </div>
+            {virtueGroups.length > 0 && (
+              <div className="space-y-2 max-w-sm">
+                {virtueGroups.map(group => {
+                  const groupItemCount = items.filter(i => i.type === 'principles' && i.groupId === group.id).length;
+                  return (
+                    <div
+                      key={group.id}
+                      onClick={() => setSelectedVirtueGroup(group.id)}
+                      className="group/vgroup flex items-center justify-between border border-slate-200 rounded-lg px-4 py-3 cursor-pointer hover:border-blue-300 transition"
+                    >
+                      <div>
+                        <h3 className="text-sm text-slate-900 font-medium">{group.name}</h3>
+                        <p className="text-xs text-slate-400 font-light">{groupItemCount} {groupItemCount === 1 ? 'Tugend' : 'Tugenden'}</p>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteVirtueGroup(group.id); }}
+                        className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover/vgroup:opacity-100 flex-shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {section === 'principles' && !selectedVirtueGroup && virtueGroups.length > 0 && (
+          <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-4">Ohne Kategorie</h2>
+        )}
 
         {/* Add new - ganz oben */}
         <div className="mb-8 sm:mb-10">
@@ -867,14 +1043,25 @@ export default function YuYuApp() {
 
                   <div className="flex-1">
                     <div className="flex justify-between items-start mb-2">
-                      <h3 className="text-sm text-slate-900 font-light">{item.name}</h3>
+                      <h3 className={`text-sm font-light ${item.failed ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</h3>
                       {!selectionMode && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
-                          className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                        >
-                          <Trash2 className="w-3 h-3" strokeWidth={1.5} />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          {section === 'goals' && !item.failed && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); failItem(item.id); }}
+                              title="Als gescheitert markieren"
+                              className="p-1.5 -m-1.5 text-slate-300 hover:text-orange-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            >
+                              <X className="w-3 h-3" strokeWidth={1.5} />
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
+                            className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                          >
+                            <Trash2 className="w-3 h-3" strokeWidth={1.5} />
+                          </button>
+                        </div>
                       )}
                     </div>
 
