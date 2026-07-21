@@ -1,0 +1,875 @@
+import React, { useState, useEffect } from 'react';
+import { Trash2, Plus, CheckCircle2, Circle, X, ArrowLeft } from 'lucide-react';
+
+export default function YuYuApp() {
+  const [section, setSection] = useState('hub');
+  const [items, setItems] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [newItemName, setNewItemName] = useState('');
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newTodoText, setNewTodoText] = useState('');
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [reorderMode, setReorderMode] = useState(false);
+  const [draggedId, setDraggedId] = useState(null);
+  const [quickTaskText, setQuickTaskText] = useState('');
+  const [quickTaskProject, setQuickTaskProject] = useState('');
+  const [expandedProjects, setExpandedProjects] = useState({});
+  const [newProjectNameTodoist, setNewProjectNameTodoist] = useState('');
+  const [showNewProjectInput, setShowNewProjectInput] = useState(false);
+
+  const categories = [
+    { id: 'goals', label: 'Ziel', labelPlural: 'Ziele', startAngle: 0, endAngle: 90 },
+    { id: 'life-areas', label: 'Lebensbereich', labelPlural: 'Lebensbereiche', startAngle: 90, endAngle: 180 },
+    { id: 'habits', label: 'Gewohnheit', labelPlural: 'Gewohnheiten', startAngle: 180, endAngle: 270 },
+    { id: 'todos', label: 'Aufgabe', labelPlural: 'Aufgaben', startAngle: 270, endAngle: 360 }
+  ];
+
+  const allCategories = [...categories, { id: 'principles', label: 'Tugend', labelPlural: 'Tugenden' }];
+  const currentCategory = allCategories.find(c => c.id === section);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    saveData();
+  }, [items, projects]);
+
+  const loadData = () => {
+    try {
+      const saved = localStorage.getItem('yuyu-items');
+      if (saved) setItems(JSON.parse(saved));
+      const projectsSaved = localStorage.getItem('yuyu-projects');
+      if (projectsSaved) setProjects(JSON.parse(projectsSaved));
+    } catch (err) {
+      console.error('Konnte gespeicherte Daten nicht laden:', err);
+    }
+  };
+
+  const saveData = () => {
+    localStorage.setItem('yuyu-items', JSON.stringify(items));
+    localStorage.setItem('yuyu-projects', JSON.stringify(projects));
+  };
+
+  const addItem = () => {
+    if (!newItemName.trim()) return;
+    setItems([...items, {
+      id: Date.now(),
+      type: section,
+      name: newItemName,
+      level: 1,
+      experience: 0,
+      maxExperience: 100,
+      createdAt: new Date().toISOString(),
+    }]);
+    setNewItemName('');
+  };
+
+  const addProject = () => {
+    if (!newProjectName.trim()) return;
+    setProjects([...projects, {
+      id: Date.now(),
+      name: newProjectName,
+      todos: [],
+      linkedItems: [],
+      duration: '5 Days'
+    }]);
+    setNewProjectName('');
+  };
+
+  const addTodo = (projectId) => {
+    if (!newTodoText.trim()) return;
+    setProjects(projects.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          todos: [...p.todos, {
+            id: Date.now(),
+            text: newTodoText,
+            completed: false,
+            linkedItems: []
+          }]
+        };
+      }
+      return p;
+    }));
+    setNewTodoText('');
+  };
+
+  // Todoist-Style: Quick-add zu einem Projekt (Inbox falls keins existiert)
+  const getOrCreateInbox = () => {
+    let inbox = projects.find(p => p.isInbox);
+    if (!inbox) {
+      inbox = { id: Date.now(), name: 'Inbox', todos: [], linkedItems: [], duration: '', isInbox: true };
+      setProjects(prev => [inbox, ...prev]);
+    }
+    return inbox;
+  };
+
+  const quickAddTask = (text, targetProjectId) => {
+    if (!text.trim()) return;
+    setProjects(prev => {
+      let list = prev;
+      let projectId = targetProjectId;
+      if (!projectId) {
+        let inbox = list.find(p => p.isInbox);
+        if (!inbox) {
+          inbox = { id: Date.now(), name: 'Inbox', todos: [], linkedItems: [], duration: '', isInbox: true };
+          list = [inbox, ...list];
+        }
+        projectId = inbox.id;
+      }
+      return list.map(p => {
+        if (p.id === projectId) {
+          return { ...p, todos: [...p.todos, { id: Date.now(), text, completed: false, linkedItems: [] }] };
+        }
+        return p;
+      });
+    });
+  };
+
+  const toggleTodo = (projectId, todoId) => {
+    setProjects(projects.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          todos: p.todos.map(t => {
+            if (t.id === todoId && !t.completed) {
+              gainExperience(t.linkedItems || [], 15);
+              return { ...t, completed: true };
+            }
+            return t;
+          })
+        };
+      }
+      return p;
+    }));
+  };
+
+  const gainExperience = (itemIds, amount) => {
+    setItems(items.map(item => {
+      if (itemIds.includes(item.id)) {
+        let exp = item.experience + amount;
+        let level = item.level;
+
+        while (exp >= item.maxExperience) {
+          exp -= item.maxExperience;
+          level += 1;
+        }
+
+        return { ...item, experience: exp, level };
+      }
+      return item;
+    }));
+  };
+
+  const deleteItem = (id) => {
+    setItems(items.filter(i => i.id !== id));
+  };
+
+  const toggleSelectItem = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const deleteSelectedItems = () => {
+    setItems(items.filter(i => !selectedIds.includes(i.id)));
+    setSelectedIds([]);
+    setSelectionMode(false);
+  };
+
+  // Tugend per Drag & Drop an neue Position im Ranking der Kategorie verschieben
+  const reorderItems = (draggedItemId, targetItemId) => {
+    if (draggedItemId === targetItemId) return;
+    setItems(prev => {
+      const sameType = prev.filter(i => i.type === section);
+      const otherType = prev.filter(i => i.type !== section);
+      const fromIdx = sameType.findIndex(i => i.id === draggedItemId);
+      const toIdx = sameType.findIndex(i => i.id === targetItemId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      const reordered = [...sameType];
+      const [moved] = reordered.splice(fromIdx, 1);
+      reordered.splice(toIdx, 0, moved);
+      return [...otherType, ...reordered];
+    });
+  };
+
+  // Tugend/Item innerhalb seiner Kategorie nach links/rechts verschieben
+  const moveItem = (id, direction) => {
+    setItems(prev => {
+      const sameType = prev.filter(i => i.type === section);
+      const otherType = prev.filter(i => i.type !== section);
+      const idx = sameType.findIndex(i => i.id === id);
+      if (idx === -1) return prev;
+      const newIdx = idx + direction;
+      if (newIdx < 0 || newIdx >= sameType.length) return prev;
+      const reordered = [...sameType];
+      [reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]];
+      return [...otherType, ...reordered];
+    });
+  };
+
+  const deleteProject = (id) => {
+    setProjects(projects.filter(p => p.id !== id));
+    if (selectedProject === id) setSelectedProject(null);
+  };
+
+  const deleteTodo = (projectId, todoId) => {
+    setProjects(projects.map(p => {
+      if (p.id === projectId) {
+        return { ...p, todos: p.todos.filter(t => t.id !== todoId) };
+      }
+      return p;
+    }));
+  };
+
+  const toggleItemLink = (projectId, todoId, itemId) => {
+    setProjects(projects.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          todos: p.todos.map(t => {
+            if (t.id === todoId) {
+              const linked = t.linkedItems || [];
+              if (linked.includes(itemId)) {
+                return { ...t, linkedItems: linked.filter(id => id !== itemId) };
+              } else {
+                return { ...t, linkedItems: [...linked, itemId] };
+              }
+            }
+            return t;
+          })
+        };
+      }
+      return p;
+    }));
+  };
+
+  const sectionItems = items.filter(i => i.type === section);
+
+  // Text in mehrere Zeilen umbrechen, damit er ins Puzzleteil passt
+  const wrapPuzzleText = (name, maxCharsPerLine = 11) => {
+    const words = name.split(' ');
+    const lines = [];
+    let current = '';
+    words.forEach(word => {
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length <= maxCharsPerLine) {
+        current = candidate;
+      } else {
+        if (current) lines.push(current);
+        current = word;
+      }
+    });
+    if (current) lines.push(current);
+    return lines.slice(0, 2);
+  };
+
+  // Puzzle-Piece Pfad mit Verbindungen auf allen 4 Seiten (echtes Jigsaw-Puzzle)
+  const puzzlePieceGridPath = (w, h, edges) => {
+    const r = h * 0.15;
+    const bumpSegment = (axis, fixed, varStart, varEnd, active) => {
+      if (!active) {
+        return axis === 'x' ? `L ${varEnd} ${fixed}` : `L ${fixed} ${varEnd}`;
+      }
+      const mid1 = varStart + (varEnd - varStart) * 0.32;
+      const mid2 = varStart + (varEnd - varStart) * 0.68;
+      const bulge = fixed + r;
+      if (axis === 'x') {
+        return `L ${mid1} ${fixed} C ${mid1} ${bulge}, ${mid2} ${bulge}, ${mid2} ${fixed} L ${varEnd} ${fixed}`;
+      }
+      return `L ${fixed} ${mid1} C ${bulge} ${mid1}, ${bulge} ${mid2}, ${fixed} ${mid2} L ${fixed} ${varEnd}`;
+    };
+
+    let d = `M 0 0`;
+    d += ' ' + bumpSegment('x', 0, 0, w, edges.top === 'notch');
+    d += ' ' + bumpSegment('y', w, 0, h, edges.right === 'tab');
+    d += ' ' + bumpSegment('x', h, w, 0, edges.bottom === 'tab');
+    d += ' ' + bumpSegment('y', 0, h, 0, edges.left === 'notch');
+    d += ' Z';
+    return d;
+  };
+
+  // Puzzle-Piece Pfad generieren - Teile fügen sich automatisch zusammen
+  const puzzlePiecePath = (w, h, hasLeftNotch, hasRightTab) => {
+    const r = h * 0.16; // Größe der Nase/Kerbe
+    const bump = (xBase, yStart, yEnd, active) => {
+      if (!active) return `L ${xBase} ${yEnd}`;
+      const yMid1 = yStart + (yEnd - yStart) * 0.32;
+      const yMid2 = yStart + (yEnd - yStart) * 0.68;
+      const bulgeX = xBase + r;
+      return `L ${xBase} ${yMid1} C ${bulgeX} ${yMid1}, ${bulgeX} ${yMid2}, ${xBase} ${yMid2} L ${xBase} ${yEnd}`;
+    };
+
+    let d = `M 0 0 L ${w} 0`;
+    d += ` ${bump(w, 0, h, hasRightTab).replace(/^L/, 'L')}`;
+    d += ` L 0 ${h}`;
+    d += ` ${bump(0, h, 0, hasLeftNotch).replace(/^L/, 'L')}`;
+    d += ' Z';
+    return d;
+  };
+
+  const polarToCartesian = (angle, radius) => {
+    const radians = ((angle - 90) * Math.PI) / 180;
+    return [250 + radius * Math.cos(radians), 250 + radius * Math.sin(radians)];
+  };
+
+  const describeArc = (startAngle, endAngle, radius) => {
+    const start = polarToCartesian(endAngle, radius);
+    const end = polarToCartesian(startAngle, radius);
+    const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+    return [
+      'M',
+      250,
+      250,
+      'L',
+      start[0],
+      start[1],
+      'A',
+      radius,
+      radius,
+      0,
+      largeArc,
+      0,
+      end[0],
+      end[1],
+      'Z'
+    ].join(' ');
+  };
+
+  // HUB VIEW
+  if (section === 'hub') {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6">
+        <div className="mb-16 text-center">
+          <h1 className="text-6xl font-light text-slate-900 tracking-tight mb-2">
+            YuYu
+          </h1>
+          <p className="text-slate-400 text-sm font-light">your growth matters</p>
+        </div>
+
+        {/* SVG Pie Chart Navigation - Minimalist */}
+        <div className="mb-8">
+          <svg width="480" height="480" viewBox="0 0 500 500" className="max-w-lg">
+            <defs>
+              {/* Reine Bogen-Pfade (ohne Linien zur Mitte) für Text */}
+              {categories.map((cat) => {
+                const radius = 175;
+                const midAngle = (cat.startAngle + cat.endAngle) / 2;
+                // Unten (90°-270°) braucht umgekehrte Richtung, damit Text nicht kopfüber ist
+                const isBottomHalf = midAngle > 90 && midAngle < 270;
+                const a1 = isBottomHalf ? cat.endAngle : cat.startAngle;
+                const a2 = isBottomHalf ? cat.startAngle : cat.endAngle;
+                const sweep = isBottomHalf ? 0 : 1;
+                const [x1, y1] = polarToCartesian(a1, radius);
+                const [x2, y2] = polarToCartesian(a2, radius);
+                const largeArc = Math.abs(cat.endAngle - cat.startAngle) > 180 ? 1 : 0;
+                const d = `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} ${sweep} ${x2} ${y2}`;
+
+                return (
+                  <path key={`path-${cat.id}`} id={`curve-${cat.id}`} d={d} fill="none" />
+                );
+              })}
+            </defs>
+
+            {/* Outer circle border - pastel dunkelblau */}
+            <circle cx="250" cy="250" r="235" fill="none" stroke="#7c9fd6" strokeWidth="1" />
+
+            {/* Segments - hier passiert der Klick */}
+            {categories.map((cat) => {
+              const outerRadius = 235;
+
+              return (
+                <g key={cat.id}>
+                  <path
+                    d={describeArc(cat.startAngle, cat.endAngle, outerRadius)}
+                    fill="#ffffff"
+                    stroke="#e5e7eb"
+                    strokeWidth="0.5"
+                    className="hover:fill-slate-50 transition-colors cursor-pointer"
+                    onClick={() => setSection(cat.id)}
+                    style={{ opacity: 0.8 }}
+                  />
+
+                  <line
+                    x1="250"
+                    y1="250"
+                    x2={polarToCartesian(cat.startAngle, outerRadius)[0]}
+                    y2={polarToCartesian(cat.startAngle, outerRadius)[1]}
+                    stroke="#7c9fd6"
+                    strokeWidth="1"
+                    opacity="0.6"
+                    pointerEvents="none"
+                  />
+                </g>
+              );
+            })}
+
+            {/* Center circle - clickable für Prinzipien */}
+            <circle cx="250" cy="250" r="140" fill="white" stroke="#7c9fd6" strokeWidth="1.5" onClick={() => setSection('principles')} className="cursor-pointer hover:fill-slate-50 transition" />
+            <circle cx="250" cy="250" r="135" fill="#f8fafc" onClick={() => setSection('principles')} className="cursor-pointer hover:fill-slate-50 transition" />
+
+            {/* Center text - schwarz */}
+            <text x="250" y="245" textAnchor="middle" dy="0.3em" fill="#000000" fontSize="14" fontWeight="300" pointerEvents="none" letterSpacing="2">
+              Tugend
+            </text>
+
+            {/* Labels - reine Anzeige, Klick passiert auf dem Segment darunter */}
+            {categories.map((cat) => (
+              <text key={`label-${cat.id}`} fill="#334155" fontSize="12" fontWeight="400" pointerEvents="none" fontFamily="'Lora', serif" letterSpacing="1.2">
+                <textPath href={`#curve-${cat.id}`} startOffset="50%" textAnchor="middle">
+                  {cat.label}
+                </textPath>
+              </text>
+            ))}
+          </svg>
+        </div>
+
+        {/* Bottom info */}
+        <p className="text-slate-400 text-xs font-light tracking-wide mt-4">click a segment to begin</p>
+      </div>
+    );
+  }
+
+  // TODOIST-STYLE VIEW für Aufgaben
+  if (section === 'todos') {
+    const toggleExpand = (projectId) => {
+      setExpandedProjects(prev => ({ ...prev, [projectId]: !prev[projectId] }));
+    };
+
+    const addTodoistProject = () => {
+      if (!newProjectNameTodoist.trim()) return;
+      setProjects([...projects, {
+        id: Date.now(),
+        name: newProjectNameTodoist,
+        todos: [],
+        linkedItems: [],
+        duration: ''
+      }]);
+      setNewProjectNameTodoist('');
+      setShowNewProjectInput(false);
+    };
+
+    const allTasksCount = projects.reduce((sum, p) => sum + p.todos.filter(t => !t.completed).length, 0);
+
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="max-w-2xl mx-auto px-6 py-8">
+          {/* Header */}
+          <div className="flex items-center gap-4 mb-8">
+            <button
+              onClick={() => setSection('hub')}
+              className="p-2 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
+            >
+              <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
+            </button>
+            <div>
+              <h1 className="text-2xl font-light text-slate-900 tracking-tight flex items-center gap-2">
+                Aufgabe
+              </h1>
+              <p className="text-xs text-slate-400 font-light mt-0.5">{allTasksCount} offen</p>
+            </div>
+          </div>
+
+          {/* Quick Add - Todoist Style */}
+          <div className="flex items-center gap-3 mb-8 border border-slate-200 rounded-lg px-4 py-3 focus-within:border-blue-400 transition">
+            <Plus className="w-5 h-5 text-blue-500 flex-shrink-0" strokeWidth={1.5} />
+            <input
+              type="text"
+              value={quickTaskText}
+              onChange={(e) => setQuickTaskText(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && quickTaskText.trim()) {
+                  quickAddTask(quickTaskText, quickTaskProject || null);
+                  setQuickTaskText('');
+                }
+              }}
+              placeholder="Aufgabe hinzufügen..."
+              className="flex-1 outline-none text-sm font-light text-slate-900 placeholder-slate-400"
+            />
+            {projects.length > 0 && (
+              <select
+                value={quickTaskProject}
+                onChange={(e) => setQuickTaskProject(e.target.value)}
+                className="text-xs text-slate-500 bg-slate-50 rounded px-2 py-1 outline-none border border-slate-200"
+              >
+                <option value="">Inbox</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Projekte mit Aufgaben - Todoist Style Liste */}
+          <div className="space-y-1">
+            {projects.length === 0 ? (
+              <p className="text-slate-400 text-sm font-light text-center py-12">Noch keine Aufgaben — leg los ✍️</p>
+            ) : (
+              projects.map(project => {
+                const openTodos = project.todos.filter(t => !t.completed);
+                const doneTodos = project.todos.filter(t => t.completed);
+                const isExpanded = expandedProjects[project.id] !== false; // default open
+
+                return (
+                  <div key={project.id} className="border-b border-slate-100 py-3">
+                    {/* Projekt-Header */}
+                    <div className="flex items-center justify-between mb-2 group">
+                      <button
+                        onClick={() => toggleExpand(project.id)}
+                        className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900 transition"
+                      >
+                        <span className={`inline-block transition-transform text-blue-400 ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
+                        {project.name}
+                        <span className="text-xs text-slate-400 font-light">{openTodos.length}</span>
+                      </button>
+                      {!project.isInbox && (
+                        <button
+                          onClick={() => deleteProject(project.id)}
+                          className="text-slate-300 hover:text-red-400 transition opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        </button>
+                      )}
+                    </div>
+
+                    {isExpanded && (
+                      <div className="space-y-0.5 ml-1">
+                        {/* Inline add task innerhalb des Projekts */}
+                        <div className="flex items-center gap-3 py-1.5 px-1">
+                          <Circle className="w-4 h-4 text-slate-200 flex-shrink-0" strokeWidth={1.5} />
+                          <input
+                            type="text"
+                            value={selectedProject === project.id ? newTodoText : ''}
+                            onFocus={() => setSelectedProject(project.id)}
+                            onChange={(e) => setNewTodoText(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && addTodo(project.id)}
+                            placeholder="+ Aufgabe hinzufügen"
+                            className="flex-1 text-sm font-light text-slate-400 placeholder-slate-300 outline-none focus:text-slate-900"
+                          />
+                        </div>
+
+                        {/* Offene Aufgaben */}
+                        {openTodos.map(todo => (
+                          <div key={todo.id} className="flex items-center gap-3 py-1.5 px-1 group/task hover:bg-slate-50 rounded transition">
+                            <button
+                              onClick={() => toggleTodo(project.id, todo.id)}
+                              className="text-slate-300 hover:text-blue-500 transition flex-shrink-0"
+                            >
+                              <Circle className="w-4 h-4" strokeWidth={1.5} />
+                            </button>
+                            <span className="flex-1 text-sm font-light text-slate-900">{todo.text}</span>
+                            <button
+                              onClick={() => deleteTodo(project.id, todo.id)}
+                              className="text-slate-300 hover:text-red-400 transition opacity-0 group-hover/task:opacity-100 flex-shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            </button>
+                          </div>
+                        ))}
+
+                        {/* Erledigte Aufgaben */}
+                        {doneTodos.length > 0 && (
+                          <div className="pt-1">
+                            {doneTodos.map(todo => (
+                              <div key={todo.id} className="flex items-center gap-3 py-1.5 px-1 group/task">
+                                <CheckCircle2 className="w-4 h-4 text-blue-400 flex-shrink-0" strokeWidth={1.5} />
+                                <span className="flex-1 text-sm font-light text-slate-400 line-through">{todo.text}</span>
+                                <button
+                                  onClick={() => deleteTodo(project.id, todo.id)}
+                                  className="text-slate-300 hover:text-red-400 transition opacity-0 group-hover/task:opacity-100 flex-shrink-0"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Neues Projekt hinzufügen */}
+          <div className="mt-8 pt-4">
+            {showNewProjectInput ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newProjectNameTodoist}
+                  onChange={(e) => setNewProjectNameTodoist(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && addTodoistProject()}
+                  placeholder="Projektname..."
+                  autoFocus
+                  className="flex-1 px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-300 focus:border-blue-500 outline-none font-light text-sm"
+                />
+                <button onClick={addTodoistProject} className="text-sm text-blue-600 hover:text-blue-700 font-light">
+                  Add
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowNewProjectInput(true)}
+                className="flex items-center gap-2 text-sm text-slate-400 hover:text-blue-600 transition font-light"
+              >
+                <Plus className="w-4 h-4" strokeWidth={1.5} /> Projekt hinzufügen
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // SECTION VIEW
+  return (
+    <div className="min-h-screen bg-white p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-12 pb-8 border-b border-slate-200">
+          <div className="flex items-center gap-6">
+            <button
+              onClick={() => setSection('hub')}
+              className="p-2 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
+            >
+              <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
+            </button>
+            <div>
+              <h1 className="text-4xl font-light text-slate-900 tracking-tight">
+                {currentCategory?.label}
+              </h1>
+              <p className="text-sm text-slate-400 font-light mt-1">{sectionItems.length} {sectionItems.length === 1 ? currentCategory?.label : currentCategory?.labelPlural}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Add new - ganz oben */}
+        <div className="mb-10">
+          <input
+            type="text"
+            value={newItemName}
+            onChange={(e) => setNewItemName(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && addItem()}
+            placeholder={currentCategory?.label}
+            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base max-w-sm"
+          />
+        </div>
+
+        {/* Puzzle-Piece Visualisierung - nur für Tugenden, direkt sichtbar */}
+        {section === 'principles' && sectionItems.length > 0 && (
+          <div className="mb-12 pb-8 border-b border-slate-100">
+            <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-8 text-center">
+              Deine Tugenden fügen sich zusammen
+            </h2>
+            <div className="flex justify-center overflow-x-auto pb-4">
+              {(() => {
+                const perRow = 4;
+                const pieceWidth = 104;
+                const pieceHeight = 80;
+                const rows = [];
+                for (let i = 0; i < sectionItems.length; i += perRow) {
+                  rows.push(sectionItems.slice(i, i + perRow));
+                }
+                const maxRowLength = Math.min(sectionItems.length, perRow);
+                const svgWidth = maxRowLength * pieceWidth + 20;
+                const svgHeight = rows.length * pieceHeight + 20;
+
+                return (
+                  <svg width={svgWidth} height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
+                    {rows.map((rowItems, rowIdx) =>
+                      rowItems.map((item, colIdx) => {
+                        const edges = {
+                          left: colIdx > 0 ? 'notch' : 'flat',
+                          right: colIdx < rowItems.length - 1 ? 'tab' : 'flat',
+                          top: rowIdx > 0 && rows[rowIdx - 1][colIdx] ? 'notch' : 'flat',
+                          bottom: rows[rowIdx + 1] && rows[rowIdx + 1][colIdx] ? 'tab' : 'flat'
+                        };
+                        const path = puzzlePieceGridPath(pieceWidth, pieceHeight, edges);
+                        const x = 10 + colIdx * pieceWidth;
+                        const y = 10 + rowIdx * pieceHeight;
+                        const nameLines = wrapPuzzleText(item.name, 12);
+                        const nameFontSize = nameLines.some(l => l.length > 10) ? 7.5 : 8.5;
+
+                        return (
+                          <g key={item.id} transform={`translate(${x}, ${y})`}>
+                            <path
+                              d={path}
+                              fill="#fdfcf9"
+                              stroke="#d4af37"
+                              strokeWidth="0.75"
+                            />
+                            <text
+                              x={pieceWidth / 2}
+                              textAnchor="middle"
+                              fill="#1e3a8a"
+                              fontSize={nameFontSize}
+                              fontWeight="400"
+                              fontFamily="'Lora', serif"
+                            >
+                              {nameLines.map((line, i) => (
+                                <tspan
+                                  key={i}
+                                  x={pieceWidth / 2}
+                                  y={pieceHeight / 2 - 14 + i * (nameFontSize + 2)}
+                                >
+                                  {line}
+                                </tspan>
+                              ))}
+                            </text>
+                            <text
+                              x={pieceWidth / 2}
+                              y={pieceHeight / 2 + 14}
+                              textAnchor="middle"
+                              fill="#d4af37"
+                              fontSize="9"
+                              fontWeight="600"
+                              fontFamily="'Lora', serif"
+                            >
+                              Lv. {item.level}
+                            </text>
+                            {item.createdAt && (
+                              <text
+                                x={pieceWidth / 2}
+                                y={pieceHeight / 2 + 27}
+                                textAnchor="middle"
+                                fill="#000000"
+                                fontSize="7"
+                                fontWeight="400"
+                                fontFamily="'Lora', serif"
+                              >
+                                {new Date(item.createdAt).toLocaleDateString('de-DE')}
+                              </text>
+                            )}
+                          </g>
+                        );
+                      })
+                    )}
+                  </svg>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
+        <div className="max-w-md">
+          {/* Items list */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase">
+                {currentCategory?.labelPlural}
+              </h2>
+              <div className="flex items-center gap-3">
+                {selectionMode && selectedIds.length > 0 && (
+                  <button
+                    onClick={deleteSelectedItems}
+                    className="text-xs text-red-500 hover:text-red-600 font-light transition"
+                  >
+                    Löschen ({selectedIds.length})
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setReorderMode(!reorderMode);
+                    setSelectionMode(false);
+                    setSelectedIds([]);
+                  }}
+                  className={`text-xs font-light tracking-wide transition ${
+                    reorderMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
+                  }`}
+                >
+                  {reorderMode ? 'Fertig' : 'Neu anordnen'}
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectionMode(!selectionMode);
+                    setSelectedIds([]);
+                    setReorderMode(false);
+                  }}
+                  className={`text-xs font-light tracking-wide transition ${
+                    selectionMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
+                  }`}
+                >
+                  {selectionMode ? 'Fertig' : 'Auswählen'}
+                </button>
+              </div>
+            </div>
+
+            {reorderMode && (
+              <p className="text-xs text-slate-400 font-light -mt-2">Ziehe eine Tugend an eine neue Position</p>
+            )}
+
+            <div className="space-y-4">
+              {sectionItems.map((item) => (
+                <div
+                  key={item.id}
+                  draggable={reorderMode}
+                  onDragStart={() => setDraggedId(item.id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => {
+                    if (draggedId) reorderItems(draggedId, item.id);
+                    setDraggedId(null);
+                  }}
+                  onDragEnd={() => setDraggedId(null)}
+                  className={`group flex items-start gap-3 transition ${
+                    selectionMode ? 'cursor-pointer' : ''
+                  } ${reorderMode ? 'cursor-move' : ''} ${
+                    draggedId === item.id ? 'opacity-40' : 'opacity-100'
+                  }`}
+                  onClick={() => selectionMode && toggleSelectItem(item.id)}
+                >
+                  {reorderMode && (
+                    <div className="mt-0.5 flex-shrink-0 text-slate-300 select-none">⠿</div>
+                  )}
+                  {selectionMode && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleSelectItem(item.id); }}
+                      className="mt-0.5 flex-shrink-0"
+                    >
+                      {selectedIds.includes(item.id) ? (
+                        <CheckCircle2 className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+                      ) : (
+                        <Circle className="w-4 h-4 text-slate-300" strokeWidth={1.5} />
+                      )}
+                    </button>
+                  )}
+
+                  <div className="flex-1">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="text-sm text-slate-900 font-light">{item.name}</h3>
+                      {!selectionMode && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
+                          className="text-slate-300 hover:text-red-500 transition opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 className="w-3 h-3" strokeWidth={1.5} />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-slate-400">Level</span>
+                        <span className="text-sm font-light text-blue-600">{item.level}</span>
+                      </div>
+                      <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
+                          style={{ width: `${(item.experience / item.maxExperience) * 100}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-slate-400 text-right">{item.experience}/{item.maxExperience}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
