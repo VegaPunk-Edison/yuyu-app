@@ -855,7 +855,7 @@ export default function YuYuApp() {
           </div>
         )}
 
-        {section === 'principles' && !selectedVirtueGroup && virtueGroups.length > 0 && (
+        {section === 'principles' && !selectedVirtueGroup && virtueGroups.length > 0 && sectionItems.length > 0 && (
           <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-4">Ohne Kategorie</h2>
         )}
 
