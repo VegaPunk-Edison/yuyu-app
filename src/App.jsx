@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, CheckCircle2, Circle, X, ArrowLeft, Heart } from 'lucide-react';
+import { Trash2, Plus, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil } from 'lucide-react';
 
 const MAX_HEARTS = 7;
 const HEART_LOSS_PER_FAIL = 0.25;
@@ -25,7 +25,12 @@ export default function YuYuApp() {
   const [virtueGroups, setVirtueGroups] = useState([]);
   const [selectedVirtueGroup, setSelectedVirtueGroup] = useState(null);
   const [newVirtueGroupName, setNewVirtueGroupName] = useState('');
+  const [editingVirtueGroupId, setEditingVirtueGroupId] = useState(null);
+  const [editingVirtueGroupName, setEditingVirtueGroupName] = useState('');
   const [hearts, setHearts] = useState(MAX_HEARTS);
+  const [newItemLinkedVirtues, setNewItemLinkedVirtues] = useState([]);
+  const [quickTaskLinkedVirtues, setQuickTaskLinkedVirtues] = useState([]);
+  const [newTodoLinkedVirtues, setNewTodoLinkedVirtues] = useState([]);
 
   const categories = [
     { id: 'goals', label: 'Ziel', labelPlural: 'Ziele', startAngle: 0, endAngle: 90 },
@@ -73,16 +78,23 @@ export default function YuYuApp() {
       id: Date.now(),
       type: section,
       name: newItemName,
-      level: 0,
-      experience: 0,
-      maxExperience: 100,
       createdAt: new Date().toISOString(),
     };
-    if (section === 'principles' && selectedVirtueGroup) {
-      newItem.groupId = selectedVirtueGroup;
+    if (section === 'principles') {
+      // Tugenden laufen über das Teilpunkte-System (siehe gainVirtuePoint), kein XP/Level mehr
+      newItem.points = 0;
+      if (selectedVirtueGroup) newItem.groupId = selectedVirtueGroup;
+    } else {
+      newItem.level = 0;
+      newItem.experience = 0;
+      newItem.maxExperience = 100;
+      if (section === 'goals') {
+        newItem.linkedItems = newItemLinkedVirtues;
+      }
     }
     setItems([...items, newItem]);
     setNewItemName('');
+    setNewItemLinkedVirtues([]);
   };
 
   // Tugend-Oberkategorien (z.B. "Old Money") gruppieren einzelne Tugenden
@@ -96,11 +108,17 @@ export default function YuYuApp() {
     setNewVirtueGroupName('');
   };
 
+  const renameVirtueGroup = (id, newName) => {
+    if (!newName.trim()) return;
+    setVirtueGroups(virtueGroups.map(g => (g.id === id ? { ...g, name: newName } : g)));
+  };
+
   const deleteVirtueGroup = (id) => {
     setVirtueGroups(virtueGroups.filter(g => g.id !== id));
     // Tugenden bleiben erhalten, werden aber wieder zu "ohne Kategorie"
     setItems(items.map(i => (i.groupId === id ? { ...i, groupId: undefined } : i)));
     if (selectedVirtueGroup === id) setSelectedVirtueGroup(null);
+    if (editingVirtueGroupId === id) setEditingVirtueGroupId(null);
   };
 
   const loseHeart = () => {
@@ -129,13 +147,14 @@ export default function YuYuApp() {
             id: Date.now(),
             text: newTodoText,
             completed: false,
-            linkedItems: []
+            linkedItems: newTodoLinkedVirtues
           }]
         };
       }
       return p;
     }));
     setNewTodoText('');
+    setNewTodoLinkedVirtues([]);
   };
 
   // Todoist-Style: Quick-add zu einem Projekt (Inbox falls keins existiert)
@@ -148,7 +167,7 @@ export default function YuYuApp() {
     return inbox;
   };
 
-  const quickAddTask = (text, targetProjectId) => {
+  const quickAddTask = (text, targetProjectId, linkedVirtues = []) => {
     if (!text.trim()) return;
     setProjects(prev => {
       let list = prev;
@@ -163,7 +182,7 @@ export default function YuYuApp() {
       }
       return list.map(p => {
         if (p.id === projectId) {
-          return { ...p, todos: [...p.todos, { id: Date.now(), text, completed: false, linkedItems: [] }] };
+          return { ...p, todos: [...p.todos, { id: Date.now(), text, completed: false, linkedItems: linkedVirtues }] };
         }
         return p;
       });
@@ -177,7 +196,7 @@ export default function YuYuApp() {
           ...p,
           todos: p.todos.map(t => {
             if (t.id === todoId && !t.completed) {
-              gainExperience(t.linkedItems || [], 15);
+              gainVirtuePoint(t.linkedItems || []);
               return { ...t, completed: true };
             }
             return t;
@@ -205,21 +224,15 @@ export default function YuYuApp() {
     loseHeart();
   };
 
-  const gainExperience = (itemIds, amount) => {
-    setItems(items.map(item => {
-      if (itemIds.includes(item.id)) {
-        let exp = item.experience + amount;
-        let level = item.level;
-
-        while (exp >= item.maxExperience) {
-          exp -= item.maxExperience;
-          level += 1;
-        }
-
-        return { ...item, experience: exp, level };
-      }
-      return item;
-    }));
+  // Teilpunkte für Tugenden: jede verknüpfte Tugend bekommt bei Erledigung einen vollen Punkt, 3 Teilpunkte = 1 Level
+  // Nutzt eine funktionale Aktualisierung, da sie oft direkt nach einem anderen setItems-Aufruf
+  // im selben Handler läuft (z.B. in completeItem) - sonst würde der zweite Aufruf mit einem
+  // veralteten items-Snapshot den ersten überschreiben.
+  const gainVirtuePoint = (virtueIds) => {
+    if (virtueIds.length === 0) return;
+    setItems(prev => prev.map(item =>
+      virtueIds.includes(item.id) ? { ...item, points: (item.points || 0) + 1 } : item
+    ));
   };
 
   const deleteItem = (id) => {
@@ -229,9 +242,17 @@ export default function YuYuApp() {
   // Ziel als gescheitert markieren: kostet ein Viertel-Herz
   const failItem = (id) => {
     const item = items.find(i => i.id === id);
-    if (!item || item.failed) return;
+    if (!item || item.failed || item.completed) return;
     setItems(items.map(i => (i.id === id ? { ...i, failed: true } : i)));
     loseHeart();
+  };
+
+  // Ziel als erfolgreich abgeschlossen markieren: vergibt Teilpunkte an verknüpfte Tugenden
+  const completeItem = (id) => {
+    const item = items.find(i => i.id === id);
+    if (!item || item.failed || item.completed) return;
+    setItems(prev => prev.map(i => (i.id === id ? { ...i, completed: true } : i)));
+    gainVirtuePoint(item.linkedItems || []);
   };
 
   const toggleSelectItem = (id) => {
@@ -317,30 +338,35 @@ export default function YuYuApp() {
     }));
   };
 
-  const toggleItemLink = (projectId, todoId, itemId) => {
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return {
-          ...p,
-          todos: p.todos.map(t => {
-            if (t.id === todoId) {
-              const linked = t.linkedItems || [];
-              if (linked.includes(itemId)) {
-                return { ...t, linkedItems: linked.filter(id => id !== itemId) };
-              } else {
-                return { ...t, linkedItems: [...linked, itemId] };
-              }
-            }
-            return t;
-          })
-        };
-      }
-      return p;
-    }));
-  };
-
   const sectionItems = items.filter(itemInScope);
   const currentVirtueGroup = virtueGroups.find(g => g.id === selectedVirtueGroup);
+  const allVirtueItems = items.filter(i => i.type === 'principles');
+
+  // Wiederverwendbarer Chip-Auswähler, um ein Ziel/eine Aufgabe mit Tugenden zu verknüpfen
+  const renderVirtueLinkPicker = (selectedVirtueIds, onToggle) => {
+    if (allVirtueItems.length === 0) return null;
+    return (
+      <div className="flex flex-wrap gap-1.5 mt-2">
+        {allVirtueItems.map(v => {
+          const active = selectedVirtueIds.includes(v.id);
+          return (
+            <button
+              key={v.id}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onToggle(v.id); }}
+              className={`text-xs px-2 py-1 rounded-full border transition ${
+                active
+                  ? 'bg-blue-50 border-blue-300 text-blue-700'
+                  : 'border-slate-200 text-slate-500 hover:border-blue-300'
+              }`}
+            >
+              {v.name}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
 
   // Text in mehrere Zeilen umbrechen, damit er ins Puzzleteil passt
   const wrapPuzzleText = (name, maxCharsPerLine = 11) => {
@@ -586,32 +612,38 @@ export default function YuYuApp() {
           </div>
 
           {/* Quick Add - Todoist Style */}
-          <div className="flex items-center gap-3 mb-6 sm:mb-8 border border-slate-200 rounded-lg px-4 py-3 focus-within:border-blue-400 transition">
-            <Plus className="w-5 h-5 text-blue-500 flex-shrink-0" strokeWidth={1.5} />
-            <input
-              type="text"
-              value={quickTaskText}
-              onChange={(e) => setQuickTaskText(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === 'Enter' && quickTaskText.trim()) {
-                  quickAddTask(quickTaskText, quickTaskProject || null);
-                  setQuickTaskText('');
-                }
-              }}
-              placeholder="Aufgabe hinzufügen..."
-              className="flex-1 min-w-0 outline-none text-base sm:text-sm font-light text-slate-900 placeholder-slate-400"
-            />
-            {projects.length > 0 && (
-              <select
-                value={quickTaskProject}
-                onChange={(e) => setQuickTaskProject(e.target.value)}
-                className="text-xs text-slate-500 bg-slate-50 rounded px-2 py-1 outline-none border border-slate-200"
-              >
-                <option value="">Inbox</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+          <div className="mb-6 sm:mb-8 border border-slate-200 rounded-lg px-4 py-3 focus-within:border-blue-400 transition">
+            <div className="flex items-center gap-3">
+              <Plus className="w-5 h-5 text-blue-500 flex-shrink-0" strokeWidth={1.5} />
+              <input
+                type="text"
+                value={quickTaskText}
+                onChange={(e) => setQuickTaskText(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && quickTaskText.trim()) {
+                    quickAddTask(quickTaskText, quickTaskProject || null, quickTaskLinkedVirtues);
+                    setQuickTaskText('');
+                    setQuickTaskLinkedVirtues([]);
+                  }
+                }}
+                placeholder="Aufgabe hinzufügen..."
+                className="flex-1 min-w-0 outline-none text-base sm:text-sm font-light text-slate-900 placeholder-slate-400"
+              />
+              {projects.length > 0 && (
+                <select
+                  value={quickTaskProject}
+                  onChange={(e) => setQuickTaskProject(e.target.value)}
+                  className="text-xs text-slate-500 bg-slate-50 rounded px-2 py-1 outline-none border border-slate-200"
+                >
+                  <option value="">Inbox</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            {renderVirtueLinkPicker(quickTaskLinkedVirtues, (id) =>
+              setQuickTaskLinkedVirtues(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
             )}
           </div>
 
@@ -651,17 +683,22 @@ export default function YuYuApp() {
                     {isExpanded && (
                       <div className="space-y-0.5 ml-1">
                         {/* Inline add task innerhalb des Projekts */}
-                        <div className="flex items-center gap-3 py-1.5 px-1">
-                          <Circle className="w-4 h-4 text-slate-200 flex-shrink-0" strokeWidth={1.5} />
-                          <input
-                            type="text"
-                            value={selectedProject === project.id ? newTodoText : ''}
-                            onFocus={() => setSelectedProject(project.id)}
-                            onChange={(e) => setNewTodoText(e.target.value)}
-                            onKeyPress={(e) => e.key === 'Enter' && addTodo(project.id)}
-                            placeholder="+ Aufgabe hinzufügen"
-                            className="flex-1 min-w-0 text-base sm:text-sm font-light text-slate-400 placeholder-slate-300 outline-none focus:text-slate-900"
-                          />
+                        <div className="py-1.5 px-1">
+                          <div className="flex items-center gap-3">
+                            <Circle className="w-4 h-4 text-slate-200 flex-shrink-0" strokeWidth={1.5} />
+                            <input
+                              type="text"
+                              value={selectedProject === project.id ? newTodoText : ''}
+                              onFocus={() => setSelectedProject(project.id)}
+                              onChange={(e) => setNewTodoText(e.target.value)}
+                              onKeyPress={(e) => e.key === 'Enter' && addTodo(project.id)}
+                              placeholder="+ Aufgabe hinzufügen"
+                              className="flex-1 min-w-0 text-base sm:text-sm font-light text-slate-400 placeholder-slate-300 outline-none focus:text-slate-900"
+                            />
+                          </div>
+                          {selectedProject === project.id && renderVirtueLinkPicker(newTodoLinkedVirtues, (id) =>
+                            setNewTodoLinkedVirtues(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+                          )}
                         </div>
 
                         {/* Offene Aufgaben */}
@@ -817,23 +854,61 @@ export default function YuYuApp() {
             {virtueGroups.length > 0 && (
               <div className="space-y-2 max-w-sm">
                 {virtueGroups.map(group => {
-                  const groupItemCount = items.filter(i => i.type === 'principles' && i.groupId === group.id).length;
+                  const groupItems = items.filter(i => i.type === 'principles' && i.groupId === group.id);
+                  const groupPoints = groupItems.reduce((sum, i) => sum + (i.points || 0), 0);
+                  const groupLevel = Math.floor(groupPoints / 3);
+                  const isEditingGroup = editingVirtueGroupId === group.id;
                   return (
                     <div
                       key={group.id}
-                      onClick={() => setSelectedVirtueGroup(group.id)}
+                      onClick={() => !isEditingGroup && setSelectedVirtueGroup(group.id)}
                       className="group/vgroup flex items-center justify-between border border-slate-200 rounded-lg px-4 py-3 cursor-pointer hover:border-blue-300 transition"
                     >
-                      <div>
-                        <h3 className="text-sm text-slate-900 font-medium">{group.name}</h3>
-                        <p className="text-xs text-slate-400 font-light">{groupItemCount} {groupItemCount === 1 ? 'Tugend' : 'Tugenden'}</p>
+                      {isEditingGroup ? (
+                        <input
+                          autoFocus
+                          value={editingVirtueGroupName}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setEditingVirtueGroupName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              renameVirtueGroup(group.id, editingVirtueGroupName);
+                              setEditingVirtueGroupId(null);
+                            }
+                            if (e.key === 'Escape') setEditingVirtueGroupId(null);
+                          }}
+                          onBlur={() => {
+                            renameVirtueGroup(group.id, editingVirtueGroupName);
+                            setEditingVirtueGroupId(null);
+                          }}
+                          className="flex-1 min-w-0 text-sm text-slate-900 font-medium bg-transparent border-b border-blue-400 outline-none"
+                        />
+                      ) : (
+                        <div>
+                          <h3 className="text-sm text-slate-900 font-medium">{group.name}</h3>
+                          <p className="text-xs text-slate-400 font-light">
+                            {groupItems.length} {groupItems.length === 1 ? 'Tugend' : 'Tugenden'} · Gesamtlevel {groupLevel}
+                          </p>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingVirtueGroupId(group.id);
+                            setEditingVirtueGroupName(group.name);
+                          }}
+                          className="p-1.5 -m-1.5 text-slate-300 hover:text-blue-500 transition opacity-100 sm:opacity-0 sm:group-hover/vgroup:opacity-100"
+                        >
+                          <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteVirtueGroup(group.id); }}
+                          className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover/vgroup:opacity-100"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        </button>
                       </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteVirtueGroup(group.id); }}
-                        className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover/vgroup:opacity-100 flex-shrink-0"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                      </button>
                     </div>
                   );
                 })}
@@ -846,17 +921,22 @@ export default function YuYuApp() {
           <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-4">Ohne Kategorie</h2>
         )}
 
-        {/* Add new - ganz oben */}
-        <div className="mb-8 sm:mb-10">
-          <input
-            type="text"
-            value={newItemName}
-            onChange={(e) => setNewItemName(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && addItem()}
-            placeholder={currentCategory?.label}
-            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base max-w-sm"
-          />
-        </div>
+        {/* Add new - ganz oben. Tugenden lassen sich nur innerhalb einer Oberkategorie anlegen */}
+        {!(section === 'principles' && !selectedVirtueGroup) && (
+          <div className="mb-8 sm:mb-10 max-w-sm">
+            <input
+              type="text"
+              value={newItemName}
+              onChange={(e) => setNewItemName(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && addItem()}
+              placeholder={currentCategory?.label}
+              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+            />
+            {section === 'goals' && renderVirtueLinkPicker(newItemLinkedVirtues, (id) =>
+              setNewItemLinkedVirtues(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+            )}
+          </div>
+        )}
 
         {/* Puzzle-Piece Visualisierung - nur für Tugenden, direkt sichtbar */}
         {section === 'principles' && sectionItems.length > 0 && (
@@ -928,7 +1008,7 @@ export default function YuYuApp() {
                               fontWeight="600"
                               fontFamily="'Lora', serif"
                             >
-                              Lv. {item.level}
+                              Lv. {Math.floor((item.points || 0) / 3)}
                             </text>
                             {item.createdAt && (
                               <text
@@ -1043,17 +1123,28 @@ export default function YuYuApp() {
 
                   <div className="flex-1">
                     <div className="flex justify-between items-start mb-2">
-                      <h3 className={`text-sm font-light ${item.failed ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</h3>
+                      <h3 className={`text-sm font-light ${
+                        item.failed ? 'text-slate-400 line-through' : item.completed ? 'text-green-700 line-through' : 'text-slate-900'
+                      }`}>{item.name}</h3>
                       {!selectionMode && (
                         <div className="flex items-center gap-1">
-                          {section === 'goals' && !item.failed && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); failItem(item.id); }}
-                              title="Als gescheitert markieren"
-                              className="p-1.5 -m-1.5 text-slate-300 hover:text-orange-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                            >
-                              <X className="w-3 h-3" strokeWidth={1.5} />
-                            </button>
+                          {section === 'goals' && !item.failed && !item.completed && (
+                            <>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); completeItem(item.id); }}
+                                title="Als erfolgreich abgeschlossen markieren"
+                                className="p-1.5 -m-1.5 text-slate-300 hover:text-green-600 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                              >
+                                <CheckCircle2 className="w-3 h-3" strokeWidth={1.5} />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); failItem(item.id); }}
+                                title="Als gescheitert markieren"
+                                className="p-1.5 -m-1.5 text-slate-300 hover:text-orange-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                              >
+                                <X className="w-3 h-3" strokeWidth={1.5} />
+                              </button>
+                            </>
                           )}
                           <button
                             onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
@@ -1065,19 +1156,35 @@ export default function YuYuApp() {
                       )}
                     </div>
 
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-slate-400">Level</span>
-                        <span className="text-sm font-light text-blue-600">{item.level}</span>
+                    {section === 'principles' ? (
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-slate-400">Level</span>
+                          <span className="text-sm font-light text-blue-600">{Math.floor((item.points || 0) / 3)}</span>
+                        </div>
+                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
+                            style={{ width: `${(((item.points || 0) % 3) / 3) * 100}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-400 text-right">{item.points || 0} Teilpunkte</p>
                       </div>
-                      <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
-                          style={{ width: `${(item.experience / item.maxExperience) * 100}%` }}
-                        />
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-slate-400">Level</span>
+                          <span className="text-sm font-light text-blue-600">{item.level}</span>
+                        </div>
+                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
+                            style={{ width: `${(item.experience / item.maxExperience) * 100}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-400 text-right">{item.experience}/{item.maxExperience}</p>
                       </div>
-                      <p className="text-xs text-slate-400 text-right">{item.experience}/{item.maxExperience}</p>
-                    </div>
+                    )}
                   </div>
                 </div>
               ))}
