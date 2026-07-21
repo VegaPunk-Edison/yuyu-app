@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, CheckCircle2, Circle, X, ArrowLeft, ChevronUp, ChevronDown } from 'lucide-react';
+import { Trash2, Plus, CheckCircle2, Circle, X, ArrowLeft } from 'lucide-react';
 
 export default function YuYuApp() {
   const [section, setSection] = useState('hub');
@@ -13,6 +13,7 @@ export default function YuYuApp() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [reorderMode, setReorderMode] = useState(false);
   const [draggedId, setDraggedId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
   const [quickTaskText, setQuickTaskText] = useState('');
   const [quickTaskProject, setQuickTaskProject] = useState('');
   const [expandedProjects, setExpandedProjects] = useState({});
@@ -193,6 +194,28 @@ export default function YuYuApp() {
       reordered.splice(toIdx, 0, moved);
       return [...otherType, ...reordered];
     });
+  };
+
+  // Ziehen per Maus oder Finger: funktioniert einheitlich über die Pointer-Events-API
+  const handleDragHandlePointerDown = (e, id) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDraggedId(id);
+  };
+
+  const handleDragHandlePointerMove = (e) => {
+    if (draggedId == null) return;
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const row = target?.closest('[data-item-id]');
+    setDragOverId(row ? Number(row.dataset.itemId) : null);
+  };
+
+  const handleDragHandlePointerUp = () => {
+    if (draggedId != null && dragOverId != null && dragOverId !== draggedId) {
+      reorderItems(draggedId, dragOverId);
+    }
+    setDraggedId(null);
+    setDragOverId(null);
   };
 
   // Tugend/Item innerhalb seiner Kategorie nach links/rechts verschieben
@@ -799,47 +822,34 @@ export default function YuYuApp() {
             </div>
 
             {reorderMode && (
-              <p className="text-xs text-slate-400 font-light -mt-2">Mit den Pfeilen verschieben oder ziehen, um die Reihenfolge zu ändern</p>
+              <p className="text-xs text-slate-400 font-light -mt-2">Am Griff ziehen, um die Reihenfolge zu ändern</p>
             )}
 
             <div className="space-y-4">
-              {sectionItems.map((item, itemIdx) => (
+              {sectionItems.map((item) => (
                 <div
                   key={item.id}
-                  draggable={reorderMode}
-                  onDragStart={() => setDraggedId(item.id)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => {
-                    if (draggedId) reorderItems(draggedId, item.id);
-                    setDraggedId(null);
-                  }}
-                  onDragEnd={() => setDraggedId(null)}
+                  data-item-id={item.id}
                   className={`group flex items-start gap-3 transition ${
                     selectionMode ? 'cursor-pointer' : ''
-                  } ${reorderMode ? 'cursor-move' : ''} ${
+                  } ${
                     draggedId === item.id ? 'opacity-40' : 'opacity-100'
+                  } ${
+                    reorderMode && dragOverId === item.id && draggedId !== item.id
+                      ? 'outline outline-2 outline-blue-300 rounded-lg'
+                      : ''
                   }`}
                   onClick={() => selectionMode && toggleSelectItem(item.id)}
                 >
                   {reorderMode && (
-                    <div className="mt-0.5 flex-shrink-0 flex items-center gap-1">
-                      <div className="hidden pointer-fine:block text-slate-300 select-none">⠿</div>
-                      <div className="flex flex-col">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); moveItem(item.id, -1); }}
-                          disabled={itemIdx === 0}
-                          className="p-1 -m-0.5 text-slate-400 hover:text-blue-600 disabled:opacity-20 disabled:pointer-events-none transition"
-                        >
-                          <ChevronUp className="w-3.5 h-3.5" strokeWidth={1.5} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); moveItem(item.id, 1); }}
-                          disabled={itemIdx === sectionItems.length - 1}
-                          className="p-1 -m-0.5 text-slate-400 hover:text-blue-600 disabled:opacity-20 disabled:pointer-events-none transition"
-                        >
-                          <ChevronDown className="w-3.5 h-3.5" strokeWidth={1.5} />
-                        </button>
-                      </div>
+                    <div
+                      onPointerDown={(e) => handleDragHandlePointerDown(e, item.id)}
+                      onPointerMove={handleDragHandlePointerMove}
+                      onPointerUp={handleDragHandlePointerUp}
+                      onPointerCancel={handleDragHandlePointerUp}
+                      className="mt-0.5 -my-1.5 -ml-1.5 p-1.5 flex-shrink-0 text-slate-400 select-none touch-none cursor-grab active:cursor-grabbing"
+                    >
+                      ⠿
                     </div>
                   )}
                   {selectionMode && (
