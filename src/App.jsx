@@ -1,36 +1,158 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, Plus, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil } from 'lucide-react';
 
 const MAX_HEARTS = 7;
 const HEART_LOSS_PER_FAIL = 0.25;
 
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const loadJSON = (key, fallback) => {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved !== null ? JSON.parse(saved) : fallback;
+  } catch (err) {
+    console.error(`Konnte "${key}" nicht laden:`, err);
+    return fallback;
+  }
+};
+
+// Freistehende Komponente (nicht innerhalb von YuYuApp definiert), damit React sie nicht bei
+// jedem Render der Elternkomponente neu erzeugt und dadurch den Fokus verliert.
+// Textfeld mit @Mention-Autocomplete: tippt man "@Name", erscheint ein Dropdown mit passenden
+// Tugenden; eine Auswahl fügt "@VollerName " in den Text ein. Beim Absenden werden alle
+// erkannten "@VollerName"-Vorkommen aus dem gespeicherten Text entfernt und als verknüpfte
+// Tugend-IDs an onSubmit übergeben.
+function MentionTextInput({ placeholder, virtues, onSubmit, className, wrapperClassName, autoFocus }) {
+  const [value, setValue] = useState('');
+  const [mentionQuery, setMentionQuery] = useState(null);
+  const [mentionStart, setMentionStart] = useState(null);
+  const inputRef = useRef(null);
+
+  const suggestions = mentionQuery !== null
+    ? virtues.filter(v => v.name.toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 5)
+    : [];
+
+  const updateMentionState = (text, cursorPos) => {
+    const before = text.slice(0, cursorPos);
+    const atIndex = before.lastIndexOf('@');
+    if (atIndex === -1 || /\s/.test(before.slice(atIndex + 1))) {
+      setMentionQuery(null);
+      setMentionStart(null);
+      return;
+    }
+    setMentionQuery(before.slice(atIndex + 1));
+    setMentionStart(atIndex);
+  };
+
+  const handleChange = (e) => {
+    setValue(e.target.value);
+    updateMentionState(e.target.value, e.target.selectionStart);
+  };
+
+  const selectSuggestion = (virtue) => {
+    if (mentionStart == null) return;
+    const cursorPos = inputRef.current?.selectionStart ?? value.length;
+    const before = value.slice(0, mentionStart);
+    const after = value.slice(cursorPos);
+    const insertion = `@${virtue.name} `;
+    const newValue = `${before}${insertion}${after}`;
+    setValue(newValue);
+    setMentionQuery(null);
+    setMentionStart(null);
+    requestAnimationFrame(() => {
+      const pos = (before + insertion).length;
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(pos, pos);
+    });
+  };
+
+  const submit = () => {
+    if (!value.trim()) return;
+    const linkedIds = [];
+    let cleanText = value;
+    virtues.forEach(v => {
+      const pattern = '@' + escapeRegExp(v.name) + '(?=\\s|$)';
+      if (new RegExp(pattern).test(cleanText)) {
+        linkedIds.push(v.id);
+        cleanText = cleanText.replace(new RegExp(pattern, 'g'), '');
+      }
+    });
+    cleanText = cleanText.replace(/\s+/g, ' ').trim();
+    if (!cleanText) return;
+    onSubmit(cleanText, linkedIds);
+    setValue('');
+    setMentionQuery(null);
+    setMentionStart(null);
+  };
+
+  const handleKeyDown = (e) => {
+    if (mentionQuery !== null && suggestions.length > 0 && (e.key === 'Enter' || e.key === 'Tab')) {
+      e.preventDefault();
+      selectSuggestion(suggestions[0]);
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submit();
+    }
+    if (e.key === 'Escape') {
+      setMentionQuery(null);
+      setMentionStart(null);
+    }
+  };
+
+  return (
+    <div className={`relative ${wrapperClassName || ''}`}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        className={className}
+      />
+      {mentionQuery !== null && suggestions.length > 0 && (
+        <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+          {suggestions.map(v => (
+            <button
+              key={v.id}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); selectSuggestion(v); }}
+              className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+            >
+              {v.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function YuYuApp() {
   const [section, setSection] = useState('hub');
-  const [items, setItems] = useState([]);
-  const [projects, setProjects] = useState([]);
+  const [items, setItems] = useState(() => loadJSON('yuyu-items', []));
+  const [todos, setTodos] = useState(() => {
+    const saved = loadJSON('yuyu-todos', null);
+    if (saved !== null) return saved;
+    // Migration: Aufgaben gab es früher pro Projekt - alle in eine flache Liste zusammenführen
+    const legacyProjects = loadJSON('yuyu-projects', null);
+    return legacyProjects ? legacyProjects.flatMap(p => p.todos || []) : [];
+  });
   const [newItemName, setNewItemName] = useState('');
-  const [newProjectName, setNewProjectName] = useState('');
-  const [newTodoText, setNewTodoText] = useState('');
-  const [selectedProject, setSelectedProject] = useState(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [reorderMode, setReorderMode] = useState(false);
   const [draggedId, setDraggedId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
-  const [quickTaskText, setQuickTaskText] = useState('');
-  const [quickTaskProject, setQuickTaskProject] = useState('');
-  const [expandedProjects, setExpandedProjects] = useState({});
-  const [newProjectNameTodoist, setNewProjectNameTodoist] = useState('');
-  const [showNewProjectInput, setShowNewProjectInput] = useState(false);
-  const [virtueGroups, setVirtueGroups] = useState([]);
+  const [virtueGroups, setVirtueGroups] = useState(() => loadJSON('yuyu-virtue-groups', []));
   const [selectedVirtueGroup, setSelectedVirtueGroup] = useState(null);
   const [newVirtueGroupName, setNewVirtueGroupName] = useState('');
   const [editingVirtueGroupId, setEditingVirtueGroupId] = useState(null);
   const [editingVirtueGroupName, setEditingVirtueGroupName] = useState('');
-  const [hearts, setHearts] = useState(MAX_HEARTS);
-  const [newItemLinkedVirtues, setNewItemLinkedVirtues] = useState([]);
-  const [quickTaskLinkedVirtues, setQuickTaskLinkedVirtues] = useState([]);
-  const [newTodoLinkedVirtues, setNewTodoLinkedVirtues] = useState([]);
+  const [hearts, setHearts] = useState(() => loadJSON('yuyu-hearts', MAX_HEARTS));
 
   const categories = [
     { id: 'goals', label: 'Ziel', labelPlural: 'Ziele', startAngle: 0, endAngle: 90 },
@@ -42,59 +164,43 @@ export default function YuYuApp() {
   const allCategories = [...categories, { id: 'principles', label: 'Tugend', labelPlural: 'Tugenden' }];
   const currentCategory = allCategories.find(c => c.id === section);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
+  // Nur noch Speichern läuft über einen Effekt; Laden passiert synchron in den useState-Initializern
+  // oben (siehe loadJSON) - sonst gäbe es einen Wettlauf: dieser Effekt liefe beim ersten Mount mit
+  // den alten (leeren) State-Werten, bevor ein separater Lade-Effekt seine setState-Aufrufe verarbeitet
+  // hätte, und würde die gerade geladenen/migrierten Daten wieder mit leeren Arrays überschreiben.
   useEffect(() => {
     saveData();
-  }, [items, projects, virtueGroups, hearts]);
-
-  const loadData = () => {
-    try {
-      const saved = localStorage.getItem('yuyu-items');
-      if (saved) setItems(JSON.parse(saved));
-      const projectsSaved = localStorage.getItem('yuyu-projects');
-      if (projectsSaved) setProjects(JSON.parse(projectsSaved));
-      const virtueGroupsSaved = localStorage.getItem('yuyu-virtue-groups');
-      if (virtueGroupsSaved) setVirtueGroups(JSON.parse(virtueGroupsSaved));
-      const heartsSaved = localStorage.getItem('yuyu-hearts');
-      if (heartsSaved !== null) setHearts(JSON.parse(heartsSaved));
-    } catch (err) {
-      console.error('Konnte gespeicherte Daten nicht laden:', err);
-    }
-  };
+  }, [items, todos, virtueGroups, hearts]);
 
   const saveData = () => {
     localStorage.setItem('yuyu-items', JSON.stringify(items));
-    localStorage.setItem('yuyu-projects', JSON.stringify(projects));
+    localStorage.setItem('yuyu-todos', JSON.stringify(todos));
     localStorage.setItem('yuyu-virtue-groups', JSON.stringify(virtueGroups));
     localStorage.setItem('yuyu-hearts', JSON.stringify(hearts));
   };
 
-  const addItem = () => {
-    if (!newItemName.trim()) return;
+  const addItem = (name, linkedVirtues = []) => {
+    if (!name || !name.trim()) return;
+    if (section === 'principles' && !selectedVirtueGroup) return; // Tugenden nur innerhalb einer Oberkategorie
     const newItem = {
       id: Date.now(),
       type: section,
-      name: newItemName,
+      name: name.trim(),
       createdAt: new Date().toISOString(),
     };
     if (section === 'principles') {
       // Tugenden laufen über das Teilpunkte-System (siehe gainVirtuePoint), kein XP/Level mehr
       newItem.points = 0;
-      if (selectedVirtueGroup) newItem.groupId = selectedVirtueGroup;
+      newItem.groupId = selectedVirtueGroup;
     } else {
       newItem.level = 0;
       newItem.experience = 0;
       newItem.maxExperience = 100;
       if (section === 'goals') {
-        newItem.linkedItems = newItemLinkedVirtues;
+        newItem.linkedItems = linkedVirtues;
       }
     }
     setItems([...items, newItem]);
-    setNewItemName('');
-    setNewItemLinkedVirtues([]);
   };
 
   // Tugend-Oberkategorien (z.B. "Old Money") gruppieren einzelne Tugenden
@@ -125,102 +231,30 @@ export default function YuYuApp() {
     setHearts(prev => Math.max(0, Math.round((prev - HEART_LOSS_PER_FAIL) * 100) / 100));
   };
 
-  const addProject = () => {
-    if (!newProjectName.trim()) return;
-    setProjects([...projects, {
+  const addTodo = (text, linkedVirtues = []) => {
+    if (!text || !text.trim()) return;
+    setTodos([...todos, {
       id: Date.now(),
-      name: newProjectName,
-      todos: [],
-      linkedItems: [],
-      duration: '5 Days'
+      text: text.trim(),
+      completed: false,
+      failed: false,
+      linkedItems: linkedVirtues,
+      createdAt: new Date().toISOString(),
     }]);
-    setNewProjectName('');
   };
 
-  const addTodo = (projectId) => {
-    if (!newTodoText.trim()) return;
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return {
-          ...p,
-          todos: [...p.todos, {
-            id: Date.now(),
-            text: newTodoText,
-            completed: false,
-            linkedItems: newTodoLinkedVirtues
-          }]
-        };
-      }
-      return p;
-    }));
-    setNewTodoText('');
-    setNewTodoLinkedVirtues([]);
-  };
-
-  // Todoist-Style: Quick-add zu einem Projekt (Inbox falls keins existiert)
-  const getOrCreateInbox = () => {
-    let inbox = projects.find(p => p.isInbox);
-    if (!inbox) {
-      inbox = { id: Date.now(), name: 'Inbox', todos: [], linkedItems: [], duration: '', isInbox: true };
-      setProjects(prev => [inbox, ...prev]);
-    }
-    return inbox;
-  };
-
-  const quickAddTask = (text, targetProjectId, linkedVirtues = []) => {
-    if (!text.trim()) return;
-    setProjects(prev => {
-      let list = prev;
-      let projectId = targetProjectId;
-      if (!projectId) {
-        let inbox = list.find(p => p.isInbox);
-        if (!inbox) {
-          inbox = { id: Date.now(), name: 'Inbox', todos: [], linkedItems: [], duration: '', isInbox: true };
-          list = [inbox, ...list];
-        }
-        projectId = inbox.id;
-      }
-      return list.map(p => {
-        if (p.id === projectId) {
-          return { ...p, todos: [...p.todos, { id: Date.now(), text, completed: false, linkedItems: linkedVirtues }] };
-        }
-        return p;
-      });
-    });
-  };
-
-  const toggleTodo = (projectId, todoId) => {
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return {
-          ...p,
-          todos: p.todos.map(t => {
-            if (t.id === todoId && !t.completed) {
-              gainVirtuePoint(t.linkedItems || []);
-              return { ...t, completed: true };
-            }
-            return t;
-          })
-        };
-      }
-      return p;
-    }));
+  const toggleTodo = (todoId) => {
+    const todo = todos.find(t => t.id === todoId);
+    if (!todo || todo.completed) return;
+    setTodos(todos.map(t => (t.id === todoId ? { ...t, completed: true } : t)));
+    gainVirtuePoint(todo.linkedItems || []);
   };
 
   // Aufgabe als gescheitert markieren: kostet ein Viertel-Herz
-  const failTodo = (projectId, todoId) => {
-    const project = projects.find(p => p.id === projectId);
-    const todo = project?.todos.find(t => t.id === todoId);
+  const failTodo = (todoId) => {
+    const todo = todos.find(t => t.id === todoId);
     if (!todo || todo.completed || todo.failed) return;
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return {
-          ...p,
-          todos: p.todos.map(t => (t.id === todoId ? { ...t, failed: true } : t))
-        };
-      }
-      return p;
-    }));
+    setTodos(todos.map(t => (t.id === todoId ? { ...t, failed: true } : t)));
     loseHeart();
   };
 
@@ -324,49 +358,13 @@ export default function YuYuApp() {
     });
   };
 
-  const deleteProject = (id) => {
-    setProjects(projects.filter(p => p.id !== id));
-    if (selectedProject === id) setSelectedProject(null);
-  };
-
-  const deleteTodo = (projectId, todoId) => {
-    setProjects(projects.map(p => {
-      if (p.id === projectId) {
-        return { ...p, todos: p.todos.filter(t => t.id !== todoId) };
-      }
-      return p;
-    }));
+  const deleteTodo = (todoId) => {
+    setTodos(todos.filter(t => t.id !== todoId));
   };
 
   const sectionItems = items.filter(itemInScope);
   const currentVirtueGroup = virtueGroups.find(g => g.id === selectedVirtueGroup);
   const allVirtueItems = items.filter(i => i.type === 'principles');
-
-  // Wiederverwendbarer Chip-Auswähler, um ein Ziel/eine Aufgabe mit Tugenden zu verknüpfen
-  const renderVirtueLinkPicker = (selectedVirtueIds, onToggle) => {
-    if (allVirtueItems.length === 0) return null;
-    return (
-      <div className="flex flex-wrap gap-1.5 mt-2">
-        {allVirtueItems.map(v => {
-          const active = selectedVirtueIds.includes(v.id);
-          return (
-            <button
-              key={v.id}
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onToggle(v.id); }}
-              className={`text-xs px-2 py-1 rounded-full border transition ${
-                active
-                  ? 'bg-blue-50 border-blue-300 text-blue-700'
-                  : 'border-slate-200 text-slate-500 hover:border-blue-300'
-              }`}
-            >
-              {v.name}
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
 
   // Text in mehrere Zeilen umbrechen, damit er ins Puzzleteil passt
   const wrapPuzzleText = (name, maxCharsPerLine = 11) => {
@@ -571,26 +569,11 @@ export default function YuYuApp() {
     );
   }
 
-  // TODOIST-STYLE VIEW für Aufgaben
+  // TODOIST-STYLE VIEW für Aufgaben - eine einzige flache Liste, keine Projekte
   if (section === 'todos') {
-    const toggleExpand = (projectId) => {
-      setExpandedProjects(prev => ({ ...prev, [projectId]: !prev[projectId] }));
-    };
-
-    const addTodoistProject = () => {
-      if (!newProjectNameTodoist.trim()) return;
-      setProjects([...projects, {
-        id: Date.now(),
-        name: newProjectNameTodoist,
-        todos: [],
-        linkedItems: [],
-        duration: ''
-      }]);
-      setNewProjectNameTodoist('');
-      setShowNewProjectInput(false);
-    };
-
-    const allTasksCount = projects.reduce((sum, p) => sum + p.todos.filter(t => !t.completed && !t.failed).length, 0);
+    const openTodos = todos.filter(t => !t.completed && !t.failed);
+    const doneTodos = todos.filter(t => t.completed);
+    const failedTodos = todos.filter(t => t.failed);
 
     return (
       <div className="min-h-screen bg-white">
@@ -607,7 +590,7 @@ export default function YuYuApp() {
               <h1 className="text-2xl font-light text-slate-900 tracking-tight flex items-center gap-2">
                 Aufgabe
               </h1>
-              <p className="text-xs text-slate-400 font-light mt-0.5">{allTasksCount} offen</p>
+              <p className="text-xs text-slate-400 font-light mt-0.5">{openTodos.length} offen</p>
             </div>
           </div>
 
@@ -615,185 +598,83 @@ export default function YuYuApp() {
           <div className="mb-6 sm:mb-8 border border-slate-200 rounded-lg px-4 py-3 focus-within:border-blue-400 transition">
             <div className="flex items-center gap-3">
               <Plus className="w-5 h-5 text-blue-500 flex-shrink-0" strokeWidth={1.5} />
-              <input
-                type="text"
-                value={quickTaskText}
-                onChange={(e) => setQuickTaskText(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && quickTaskText.trim()) {
-                    quickAddTask(quickTaskText, quickTaskProject || null, quickTaskLinkedVirtues);
-                    setQuickTaskText('');
-                    setQuickTaskLinkedVirtues([]);
-                  }
-                }}
-                placeholder="Aufgabe hinzufügen..."
-                className="flex-1 min-w-0 outline-none text-base sm:text-sm font-light text-slate-900 placeholder-slate-400"
+              <MentionTextInput
+                placeholder="Aufgabe hinzufügen... (@Tugend zum Verknüpfen)"
+                virtues={allVirtueItems}
+                onSubmit={(text, linkedIds) => addTodo(text, linkedIds)}
+                wrapperClassName="flex-1 min-w-0"
+                className="w-full outline-none text-base sm:text-sm font-light text-slate-900 placeholder-slate-400"
               />
-              {projects.length > 0 && (
-                <select
-                  value={quickTaskProject}
-                  onChange={(e) => setQuickTaskProject(e.target.value)}
-                  className="text-xs text-slate-500 bg-slate-50 rounded px-2 py-1 outline-none border border-slate-200"
-                >
-                  <option value="">Inbox</option>
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              )}
             </div>
-            {renderVirtueLinkPicker(quickTaskLinkedVirtues, (id) =>
-              setQuickTaskLinkedVirtues(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
-            )}
           </div>
 
-          {/* Projekte mit Aufgaben - Todoist Style Liste */}
-          <div className="space-y-1">
-            {projects.length === 0 ? (
+          {/* Aufgabenliste */}
+          <div className="space-y-0.5">
+            {todos.length === 0 ? (
               <p className="text-slate-400 text-sm font-light text-center py-12">Noch keine Aufgaben — leg los ✍️</p>
             ) : (
-              projects.map(project => {
-                const openTodos = project.todos.filter(t => !t.completed && !t.failed);
-                const doneTodos = project.todos.filter(t => t.completed);
-                const failedTodos = project.todos.filter(t => t.failed);
-                const isExpanded = expandedProjects[project.id] !== false; // default open
+              <>
+                {openTodos.map(todo => (
+                  <div key={todo.id} className="flex items-center gap-3 py-1.5 px-1 group/task hover:bg-slate-50 rounded transition">
+                    <button
+                      onClick={() => toggleTodo(todo.id)}
+                      className="text-slate-300 hover:text-blue-500 transition flex-shrink-0"
+                    >
+                      <Circle className="w-4 h-4" strokeWidth={1.5} />
+                    </button>
+                    <span className="flex-1 text-sm font-light text-slate-900">{todo.text}</span>
+                    <button
+                      onClick={() => failTodo(todo.id)}
+                      title="Als gescheitert markieren"
+                      className="p-1.5 -m-1.5 text-slate-300 hover:text-orange-500 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" strokeWidth={1.5} />
+                    </button>
+                    <button
+                      onClick={() => deleteTodo(todo.id)}
+                      className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                    </button>
+                  </div>
+                ))}
 
-                return (
-                  <div key={project.id} className="border-b border-slate-100 py-3">
-                    {/* Projekt-Header */}
-                    <div className="flex items-center justify-between mb-2 group">
-                      <button
-                        onClick={() => toggleExpand(project.id)}
-                        className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900 transition"
-                      >
-                        <span className={`inline-block transition-transform text-blue-400 ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
-                        {project.name}
-                        <span className="text-xs text-slate-400 font-light">{openTodos.length}</span>
-                      </button>
-                      {!project.isInbox && (
+                {/* Gescheiterte Aufgaben */}
+                {failedTodos.length > 0 && (
+                  <div className="pt-1">
+                    {failedTodos.map(todo => (
+                      <div key={todo.id} className="flex items-center gap-3 py-1.5 px-1 group/task">
+                        <X className="w-4 h-4 text-orange-400 flex-shrink-0" strokeWidth={1.5} />
+                        <span className="flex-1 text-sm font-light text-slate-400 line-through">{todo.text}</span>
                         <button
-                          onClick={() => deleteProject(project.id)}
-                          className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                          onClick={() => deleteTodo(todo.id)}
+                          className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
                         >
                           <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                         </button>
-                      )}
-                    </div>
-
-                    {isExpanded && (
-                      <div className="space-y-0.5 ml-1">
-                        {/* Inline add task innerhalb des Projekts */}
-                        <div className="py-1.5 px-1">
-                          <div className="flex items-center gap-3">
-                            <Circle className="w-4 h-4 text-slate-200 flex-shrink-0" strokeWidth={1.5} />
-                            <input
-                              type="text"
-                              value={selectedProject === project.id ? newTodoText : ''}
-                              onFocus={() => setSelectedProject(project.id)}
-                              onChange={(e) => setNewTodoText(e.target.value)}
-                              onKeyPress={(e) => e.key === 'Enter' && addTodo(project.id)}
-                              placeholder="+ Aufgabe hinzufügen"
-                              className="flex-1 min-w-0 text-base sm:text-sm font-light text-slate-400 placeholder-slate-300 outline-none focus:text-slate-900"
-                            />
-                          </div>
-                          {selectedProject === project.id && renderVirtueLinkPicker(newTodoLinkedVirtues, (id) =>
-                            setNewTodoLinkedVirtues(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
-                          )}
-                        </div>
-
-                        {/* Offene Aufgaben */}
-                        {openTodos.map(todo => (
-                          <div key={todo.id} className="flex items-center gap-3 py-1.5 px-1 group/task hover:bg-slate-50 rounded transition">
-                            <button
-                              onClick={() => toggleTodo(project.id, todo.id)}
-                              className="text-slate-300 hover:text-blue-500 transition flex-shrink-0"
-                            >
-                              <Circle className="w-4 h-4" strokeWidth={1.5} />
-                            </button>
-                            <span className="flex-1 text-sm font-light text-slate-900">{todo.text}</span>
-                            <button
-                              onClick={() => failTodo(project.id, todo.id)}
-                              title="Als gescheitert markieren"
-                              className="p-1.5 -m-1.5 text-slate-300 hover:text-orange-500 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
-                            >
-                              <X className="w-3.5 h-3.5" strokeWidth={1.5} />
-                            </button>
-                            <button
-                              onClick={() => deleteTodo(project.id, todo.id)}
-                              className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                            </button>
-                          </div>
-                        ))}
-
-                        {/* Gescheiterte Aufgaben */}
-                        {failedTodos.length > 0 && (
-                          <div className="pt-1">
-                            {failedTodos.map(todo => (
-                              <div key={todo.id} className="flex items-center gap-3 py-1.5 px-1 group/task">
-                                <X className="w-4 h-4 text-orange-400 flex-shrink-0" strokeWidth={1.5} />
-                                <span className="flex-1 text-sm font-light text-slate-400 line-through">{todo.text}</span>
-                                <button
-                                  onClick={() => deleteTodo(project.id, todo.id)}
-                                  className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Erledigte Aufgaben */}
-                        {doneTodos.length > 0 && (
-                          <div className="pt-1">
-                            {doneTodos.map(todo => (
-                              <div key={todo.id} className="flex items-center gap-3 py-1.5 px-1 group/task">
-                                <CheckCircle2 className="w-4 h-4 text-blue-400 flex-shrink-0" strokeWidth={1.5} />
-                                <span className="flex-1 text-sm font-light text-slate-400 line-through">{todo.text}</span>
-                                <button
-                                  onClick={() => deleteTodo(project.id, todo.id)}
-                                  className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </div>
-                    )}
+                    ))}
                   </div>
-                );
-              })
-            )}
-          </div>
+                )}
 
-          {/* Neues Projekt hinzufügen */}
-          <div className="mt-8 pt-4">
-            {showNewProjectInput ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={newProjectNameTodoist}
-                  onChange={(e) => setNewProjectNameTodoist(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && addTodoistProject()}
-                  placeholder="Projektname..."
-                  autoFocus
-                  className="flex-1 min-w-0 px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-300 focus:border-blue-500 outline-none font-light text-base sm:text-sm"
-                />
-                <button onClick={addTodoistProject} className="text-sm text-blue-600 hover:text-blue-700 font-light">
-                  Add
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowNewProjectInput(true)}
-                className="flex items-center gap-2 text-sm text-slate-400 hover:text-blue-600 transition font-light"
-              >
-                <Plus className="w-4 h-4" strokeWidth={1.5} /> Projekt hinzufügen
-              </button>
+                {/* Erledigte Aufgaben */}
+                {doneTodos.length > 0 && (
+                  <div className="pt-1">
+                    {doneTodos.map(todo => (
+                      <div key={todo.id} className="flex items-center gap-3 py-1.5 px-1 group/task">
+                        <CheckCircle2 className="w-4 h-4 text-blue-400 flex-shrink-0" strokeWidth={1.5} />
+                        <span className="flex-1 text-sm font-light text-slate-400 line-through">{todo.text}</span>
+                        <button
+                          onClick={() => deleteTodo(todo.id)}
+                          className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -924,16 +805,27 @@ export default function YuYuApp() {
         {/* Add new - ganz oben. Tugenden lassen sich nur innerhalb einer Oberkategorie anlegen */}
         {!(section === 'principles' && !selectedVirtueGroup) && (
           <div className="mb-8 sm:mb-10 max-w-sm">
-            <input
-              type="text"
-              value={newItemName}
-              onChange={(e) => setNewItemName(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && addItem()}
-              placeholder={currentCategory?.label}
-              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
-            />
-            {section === 'goals' && renderVirtueLinkPicker(newItemLinkedVirtues, (id) =>
-              setNewItemLinkedVirtues(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+            {section === 'goals' ? (
+              <MentionTextInput
+                placeholder={`${currentCategory?.label} (@Tugend zum Verknüpfen)`}
+                virtues={allVirtueItems}
+                onSubmit={(text, linkedIds) => addItem(text, linkedIds)}
+                className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+              />
+            ) : (
+              <input
+                type="text"
+                value={newItemName}
+                onChange={(e) => setNewItemName(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && newItemName.trim()) {
+                    addItem(newItemName);
+                    setNewItemName('');
+                  }
+                }}
+                placeholder={currentCategory?.label}
+                className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+              />
             )}
           </div>
         )}
