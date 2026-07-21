@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2, Plus, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil } from 'lucide-react';
+import { Trash2, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil } from 'lucide-react';
 
 const MAX_HEARTS = 7;
 const HEART_LOSS_PER_FAIL = 0.25;
@@ -651,16 +651,16 @@ export default function YuYuApp() {
             </div>
           </div>
 
-          {/* Quick Add - Todoist Style */}
-          <div className="mb-6 sm:mb-8 border border-slate-200 rounded-lg px-4 py-3 focus-within:border-blue-400 transition">
+          {/* Aufgabe hinzufügen - schlicht, wie ein normaler Listeneintrag */}
+          <div className="mb-6 sm:mb-8 py-1.5 px-1">
             <div className="flex items-center gap-3">
-              <Plus className="w-5 h-5 text-blue-500 flex-shrink-0" strokeWidth={1.5} />
+              <Circle className="w-4 h-4 text-slate-200 flex-shrink-0" strokeWidth={1.5} />
               <MentionTextInput
-                placeholder="Aufgabe hinzufügen... (@Tugend zum Verknüpfen)"
+                placeholder="+ Aufgabe hinzufügen (@Tugend zum Verknüpfen)"
                 virtues={allVirtueItems}
                 onSubmit={(text, linkedIds) => addTodo(text, linkedIds)}
                 wrapperClassName="flex-1 min-w-0"
-                className="w-full outline-none text-base sm:text-sm font-light text-slate-900 placeholder-slate-400"
+                className="w-full text-base sm:text-sm font-light text-slate-400 placeholder-slate-300 outline-none focus:text-slate-900"
               />
             </div>
           </div>
