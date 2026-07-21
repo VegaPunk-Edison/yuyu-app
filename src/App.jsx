@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, CheckCircle2, Circle, X, ArrowLeft } from 'lucide-react';
+import { Trash2, Plus, CheckCircle2, Circle, X, ArrowLeft, ChevronUp, ChevronDown } from 'lucide-react';
 
 export default function YuYuApp() {
   const [section, setSection] = useState('hub');
@@ -341,9 +341,9 @@ export default function YuYuApp() {
   // HUB VIEW
   if (section === 'hub') {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6">
-        <div className="mb-16 text-center">
-          <h1 className="text-6xl font-light text-slate-900 tracking-tight mb-2">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4 sm:p-6">
+        <div className="mb-10 sm:mb-16 text-center">
+          <h1 className="text-5xl sm:text-6xl font-light text-slate-900 tracking-tight mb-2">
             YuYu
           </h1>
           <p className="text-slate-400 text-sm font-light">your growth matters</p>
@@ -351,7 +351,7 @@ export default function YuYuApp() {
 
         {/* SVG Pie Chart Navigation - Minimalist */}
         <div className="mb-8">
-          <svg width="480" height="480" viewBox="0 0 500 500" className="max-w-lg">
+          <svg viewBox="0 0 500 500" className="w-[min(88vw,480px)] h-[min(88vw,480px)]">
             <defs>
               {/* Reine Bogen-Pfade (ohne Linien zur Mitte) für Text */}
               {categories.map((cat) => {
@@ -455,12 +455,12 @@ export default function YuYuApp() {
 
     return (
       <div className="min-h-screen bg-white">
-        <div className="max-w-2xl mx-auto px-6 py-8">
+        <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
           {/* Header */}
-          <div className="flex items-center gap-4 mb-8">
+          <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
             <button
               onClick={() => setSection('hub')}
-              className="p-2 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
+              className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
             >
               <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
             </button>
@@ -473,7 +473,7 @@ export default function YuYuApp() {
           </div>
 
           {/* Quick Add - Todoist Style */}
-          <div className="flex items-center gap-3 mb-8 border border-slate-200 rounded-lg px-4 py-3 focus-within:border-blue-400 transition">
+          <div className="flex items-center gap-3 mb-6 sm:mb-8 border border-slate-200 rounded-lg px-4 py-3 focus-within:border-blue-400 transition">
             <Plus className="w-5 h-5 text-blue-500 flex-shrink-0" strokeWidth={1.5} />
             <input
               type="text"
@@ -486,7 +486,7 @@ export default function YuYuApp() {
                 }
               }}
               placeholder="Aufgabe hinzufügen..."
-              className="flex-1 outline-none text-sm font-light text-slate-900 placeholder-slate-400"
+              className="flex-1 min-w-0 outline-none text-base sm:text-sm font-light text-slate-900 placeholder-slate-400"
             />
             {projects.length > 0 && (
               <select
@@ -527,7 +527,7 @@ export default function YuYuApp() {
                       {!project.isInbox && (
                         <button
                           onClick={() => deleteProject(project.id)}
-                          className="text-slate-300 hover:text-red-400 transition opacity-0 group-hover:opacity-100"
+                          className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                         >
                           <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                         </button>
@@ -546,7 +546,7 @@ export default function YuYuApp() {
                             onChange={(e) => setNewTodoText(e.target.value)}
                             onKeyPress={(e) => e.key === 'Enter' && addTodo(project.id)}
                             placeholder="+ Aufgabe hinzufügen"
-                            className="flex-1 text-sm font-light text-slate-400 placeholder-slate-300 outline-none focus:text-slate-900"
+                            className="flex-1 min-w-0 text-base sm:text-sm font-light text-slate-400 placeholder-slate-300 outline-none focus:text-slate-900"
                           />
                         </div>
 
@@ -562,7 +562,7 @@ export default function YuYuApp() {
                             <span className="flex-1 text-sm font-light text-slate-900">{todo.text}</span>
                             <button
                               onClick={() => deleteTodo(project.id, todo.id)}
-                              className="text-slate-300 hover:text-red-400 transition opacity-0 group-hover/task:opacity-100 flex-shrink-0"
+                              className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
                             >
                               <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                             </button>
@@ -578,7 +578,7 @@ export default function YuYuApp() {
                                 <span className="flex-1 text-sm font-light text-slate-400 line-through">{todo.text}</span>
                                 <button
                                   onClick={() => deleteTodo(project.id, todo.id)}
-                                  className="text-slate-300 hover:text-red-400 transition opacity-0 group-hover/task:opacity-100 flex-shrink-0"
+                                  className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                                 </button>
@@ -605,7 +605,7 @@ export default function YuYuApp() {
                   onKeyPress={(e) => e.key === 'Enter' && addTodoistProject()}
                   placeholder="Projektname..."
                   autoFocus
-                  className="flex-1 px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-300 focus:border-blue-500 outline-none font-light text-sm"
+                  className="flex-1 min-w-0 px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-300 focus:border-blue-500 outline-none font-light text-base sm:text-sm"
                 />
                 <button onClick={addTodoistProject} className="text-sm text-blue-600 hover:text-blue-700 font-light">
                   Add
@@ -627,19 +627,19 @@ export default function YuYuApp() {
 
   // SECTION VIEW
   return (
-    <div className="min-h-screen bg-white p-8">
+    <div className="min-h-screen bg-white p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-12 pb-8 border-b border-slate-200">
-          <div className="flex items-center gap-6">
+        <div className="flex items-center justify-between mb-6 pb-4 sm:mb-12 sm:pb-8 border-b border-slate-200">
+          <div className="flex items-center gap-3 sm:gap-6">
             <button
               onClick={() => setSection('hub')}
-              className="p-2 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
+              className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
             >
               <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
             </button>
             <div>
-              <h1 className="text-4xl font-light text-slate-900 tracking-tight">
+              <h1 className="text-2xl sm:text-4xl font-light text-slate-900 tracking-tight">
                 {currentCategory?.label}
               </h1>
               <p className="text-sm text-slate-400 font-light mt-1">{sectionItems.length} {sectionItems.length === 1 ? currentCategory?.label : currentCategory?.labelPlural}</p>
@@ -648,7 +648,7 @@ export default function YuYuApp() {
         </div>
 
         {/* Add new - ganz oben */}
-        <div className="mb-10">
+        <div className="mb-8 sm:mb-10">
           <input
             type="text"
             value={newItemName}
@@ -661,15 +661,15 @@ export default function YuYuApp() {
 
         {/* Puzzle-Piece Visualisierung - nur für Tugenden, direkt sichtbar */}
         {section === 'principles' && sectionItems.length > 0 && (
-          <div className="mb-12 pb-8 border-b border-slate-100">
-            <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-8 text-center">
+          <div className="mb-8 pb-6 sm:mb-12 sm:pb-8 border-b border-slate-100">
+            <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-6 sm:mb-8 text-center">
               Deine Tugenden fügen sich zusammen
             </h2>
-            <div className="flex justify-center overflow-x-auto pb-4">
+            <div className="flex justify-center overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
               {(() => {
-                const perRow = 4;
-                const pieceWidth = 104;
-                const pieceHeight = 80;
+                const perRow = 3;
+                const pieceWidth = 96;
+                const pieceHeight = 74;
                 const rows = [];
                 for (let i = 0; i < sectionItems.length; i += perRow) {
                   rows.push(sectionItems.slice(i, i + perRow));
@@ -799,11 +799,11 @@ export default function YuYuApp() {
             </div>
 
             {reorderMode && (
-              <p className="text-xs text-slate-400 font-light -mt-2">Ziehe eine Tugend an eine neue Position</p>
+              <p className="text-xs text-slate-400 font-light -mt-2">Mit den Pfeilen verschieben oder ziehen, um die Reihenfolge zu ändern</p>
             )}
 
             <div className="space-y-4">
-              {sectionItems.map((item) => (
+              {sectionItems.map((item, itemIdx) => (
                 <div
                   key={item.id}
                   draggable={reorderMode}
@@ -822,7 +822,25 @@ export default function YuYuApp() {
                   onClick={() => selectionMode && toggleSelectItem(item.id)}
                 >
                   {reorderMode && (
-                    <div className="mt-0.5 flex-shrink-0 text-slate-300 select-none">⠿</div>
+                    <div className="mt-0.5 flex-shrink-0 flex items-center gap-1">
+                      <div className="hidden pointer-fine:block text-slate-300 select-none">⠿</div>
+                      <div className="flex flex-col">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); moveItem(item.id, -1); }}
+                          disabled={itemIdx === 0}
+                          className="p-1 -m-0.5 text-slate-400 hover:text-blue-600 disabled:opacity-20 disabled:pointer-events-none transition"
+                        >
+                          <ChevronUp className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); moveItem(item.id, 1); }}
+                          disabled={itemIdx === sectionItems.length - 1}
+                          className="p-1 -m-0.5 text-slate-400 hover:text-blue-600 disabled:opacity-20 disabled:pointer-events-none transition"
+                        >
+                          <ChevronDown className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        </button>
+                      </div>
+                    </div>
                   )}
                   {selectionMode && (
                     <button
@@ -843,7 +861,7 @@ export default function YuYuApp() {
                       {!selectionMode && (
                         <button
                           onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
-                          className="text-slate-300 hover:text-red-500 transition opacity-0 group-hover:opacity-100"
+                          className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                         >
                           <Trash2 className="w-3 h-3" strokeWidth={1.5} />
                         </button>
