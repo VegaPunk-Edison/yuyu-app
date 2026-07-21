@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil } from 'lucide-react';
+import { Trash2, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil, ChevronDown } from 'lucide-react';
 
 const MAX_HEARTS = 7;
 const HEART_LOSS_PER_FAIL = 0.25;
@@ -250,9 +250,14 @@ export default function YuYuApp() {
   };
 
   const deleteVirtueGroup = (id) => {
+    const group = virtueGroups.find(g => g.id === id);
+    const groupItemCount = items.filter(i => i.groupId === id).length;
+    const warning = groupItemCount > 0
+      ? `"${group?.name}" und die ${groupItemCount} enthaltene${groupItemCount === 1 ? '' : 'n'} Tugend${groupItemCount === 1 ? '' : 'en'} werden unwiderruflich gelöscht. Fortfahren?`
+      : `"${group?.name}" löschen?`;
+    if (!window.confirm(warning)) return;
     setVirtueGroups(virtueGroups.filter(g => g.id !== id));
-    // Tugenden bleiben erhalten, werden aber wieder zu "ohne Kategorie"
-    setItems(items.map(i => (i.groupId === id ? { ...i, groupId: undefined } : i)));
+    setItems(items.filter(i => i.groupId !== id));
     if (selectedVirtueGroup === id) setSelectedVirtueGroup(null);
     if (editingVirtueGroupId === id) setEditingVirtueGroupId(null);
   };
@@ -393,7 +398,6 @@ export default function YuYuApp() {
   };
 
   const sectionItems = items.filter(itemInScope);
-  const currentVirtueGroup = virtueGroups.find(g => g.id === selectedVirtueGroup);
   const allVirtueItems = items.filter(i => i.type === 'principles');
 
   // Text in mehrere Zeilen umbrechen, damit er ins Puzzleteil passt
@@ -739,42 +743,41 @@ export default function YuYuApp() {
     );
   }
 
-  // SECTION VIEW
-  return (
-    <div className="min-h-screen bg-white p-4 sm:p-8">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-start gap-3 sm:gap-6 mb-6 pb-4 sm:mb-12 sm:pb-8 border-b border-slate-200">
-          <button
-            onClick={() => {
-              if (section === 'principles' && selectedVirtueGroup) {
-                setSelectedVirtueGroup(null);
-              } else {
+  // TUGEND VIEW: Hauptseite zeigt nur Add-Feld + Oberkategorien-Liste;
+  // Klick auf eine Oberkategorie klappt sie als Akkordeon-Panel auf (nur eine gleichzeitig offen).
+  if (section === 'principles') {
+    return (
+      <div className="min-h-screen bg-white p-4 sm:p-8">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="flex items-start gap-3 sm:gap-6 mb-6 pb-4 sm:mb-12 sm:pb-8 border-b border-slate-200">
+            <button
+              onClick={() => {
                 setSection('hub');
-              }
-            }}
-            className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
-          >
-            <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
-          </button>
-          <div>
-            <h1 className="text-2xl sm:text-4xl font-light text-slate-900 tracking-tight">
-              {section === 'principles' && currentVirtueGroup ? currentVirtueGroup.name : currentCategory?.label}
-            </h1>
-            <p className="text-sm text-slate-400 font-light mt-1">{sectionItems.length} {sectionItems.length === 1 ? currentCategory?.label : currentCategory?.labelPlural}</p>
+                setSelectedVirtueGroup(null);
+                setSelectionMode(false);
+                setSelectedIds([]);
+                setReorderMode(false);
+              }}
+              className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
+            >
+              <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
+            </button>
+            <div>
+              <h1 className="text-2xl sm:text-4xl font-light text-slate-900 tracking-tight">
+                {currentCategory?.label}
+              </h1>
+              <p className="text-sm text-slate-400 font-light mt-1">{virtueGroups.length} {virtueGroups.length === 1 ? 'Oberkategorie' : 'Oberkategorien'}</p>
 
-            {/* Herzen: character-weite Lebensanzeige, oben auf der Tugend-Hauptseite */}
-            {section === 'principles' && !selectedVirtueGroup && (
+              {/* Herzen: character-weite Lebensanzeige */}
               <div className="mt-3">
                 <div className="flex gap-0.5 sm:gap-1">{renderHearts()}</div>
                 <p className="text-[10px] sm:text-xs text-slate-400 font-light mt-1">{Number(hearts.toFixed(2))} / {MAX_HEARTS} Herzen</p>
               </div>
-            )}
+            </div>
           </div>
-        </div>
 
-        {/* Tugend-Oberkategorien: eigene Gruppen, in die man Tugenden einsortieren kann */}
-        {section === 'principles' && !selectedVirtueGroup && (
+          {/* Tugend-Oberkategorien: eigene Gruppen, in die man Tugenden einsortieren kann */}
           <div className="mb-8 sm:mb-10">
             <div className="flex items-center gap-2 max-w-sm mb-4">
               <input
@@ -796,192 +799,371 @@ export default function YuYuApp() {
                   const groupPoints = groupItems.reduce((sum, i) => sum + (i.points || 0), 0);
                   const groupLevel = Math.floor(groupPoints / 3);
                   const isEditingGroup = editingVirtueGroupId === group.id;
+                  const isOpen = selectedVirtueGroup === group.id;
                   return (
                     <div
                       key={group.id}
-                      onClick={() => !isEditingGroup && setSelectedVirtueGroup(group.id)}
-                      className="group/vgroup flex items-center justify-between border border-slate-200 rounded-lg px-4 py-3 cursor-pointer hover:border-blue-300 transition"
+                      className="border border-slate-200 rounded-lg overflow-hidden transition hover:border-blue-300"
                     >
-                      {isEditingGroup ? (
-                        <input
-                          autoFocus
-                          value={editingVirtueGroupName}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => setEditingVirtueGroupName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
+                      <div
+                        onClick={() => {
+                          if (isEditingGroup) return;
+                          setSelectedVirtueGroup(prev => (prev === group.id ? null : group.id));
+                          setSelectionMode(false);
+                          setSelectedIds([]);
+                          setReorderMode(false);
+                          setDraggedId(null);
+                          setDragOverId(null);
+                        }}
+                        className="group/vgroup flex items-center justify-between px-4 py-3 cursor-pointer"
+                      >
+                        {isEditingGroup ? (
+                          <input
+                            autoFocus
+                            value={editingVirtueGroupName}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setEditingVirtueGroupName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                renameVirtueGroup(group.id, editingVirtueGroupName);
+                                setEditingVirtueGroupId(null);
+                              }
+                              if (e.key === 'Escape') setEditingVirtueGroupId(null);
+                            }}
+                            onBlur={() => {
                               renameVirtueGroup(group.id, editingVirtueGroupName);
                               setEditingVirtueGroupId(null);
-                            }
-                            if (e.key === 'Escape') setEditingVirtueGroupId(null);
-                          }}
-                          onBlur={() => {
-                            renameVirtueGroup(group.id, editingVirtueGroupName);
-                            setEditingVirtueGroupId(null);
-                          }}
-                          className="flex-1 min-w-0 text-sm text-slate-900 font-medium bg-transparent border-b border-blue-400 outline-none"
-                        />
-                      ) : (
-                        <div>
-                          <h3 className="text-sm text-slate-900 font-medium">{group.name}</h3>
-                          <p className="text-xs text-slate-400 font-light">
-                            {groupItems.length} {groupItems.length === 1 ? 'Tugend' : 'Tugenden'} · Gesamtlevel {groupLevel}
-                          </p>
+                            }}
+                            className="flex-1 min-w-0 text-sm text-slate-900 font-medium bg-transparent border-b border-blue-400 outline-none"
+                          />
+                        ) : (
+                          <div>
+                            <h3 className="text-sm text-slate-900 font-medium">{group.name}</h3>
+                            <p className="text-xs text-slate-400 font-light">
+                              {groupItems.length} {groupItems.length === 1 ? 'Tugend' : 'Tugenden'} · Gesamtlevel {groupLevel}
+                            </p>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingVirtueGroupId(group.id);
+                              setEditingVirtueGroupName(group.name);
+                            }}
+                            className="p-1.5 -m-1.5 text-slate-300 hover:text-blue-500 transition opacity-100 sm:opacity-0 sm:group-hover/vgroup:opacity-100"
+                          >
+                            <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteVirtueGroup(group.id); }}
+                            className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover/vgroup:opacity-100"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                          </button>
+                          <ChevronDown
+                            className={`w-4 h-4 text-slate-300 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                            strokeWidth={1.5}
+                          />
+                        </div>
+                      </div>
+
+                      {isOpen && (
+                        <div className="px-4 pb-6 pt-2 border-t border-slate-100">
+                          {/* Add Tugend - nur innerhalb der offenen Oberkategorie möglich */}
+                          <div className="mb-8 max-w-sm">
+                            <input
+                              type="text"
+                              value={newItemName}
+                              onChange={(e) => setNewItemName(e.target.value)}
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter' && newItemName.trim()) {
+                                  addItem(newItemName);
+                                  setNewItemName('');
+                                }
+                              }}
+                              placeholder="Tugend hinzufügen"
+                              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+                            />
+                          </div>
+
+                          {/* Puzzle-Piece Visualisierung */}
+                          {sectionItems.length > 0 && (
+                            <div className="mb-8 pb-6 border-b border-slate-100">
+                              <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-6 sm:mb-8 text-center">
+                                Deine Tugenden fügen sich zusammen
+                              </h2>
+                              <div className="flex justify-center overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+                                {(() => {
+                                  const perRow = 3;
+                                  const pieceWidth = 96;
+                                  const pieceHeight = 74;
+                                  const rows = [];
+                                  for (let i = 0; i < sectionItems.length; i += perRow) {
+                                    rows.push(sectionItems.slice(i, i + perRow));
+                                  }
+                                  const maxRowLength = Math.min(sectionItems.length, perRow);
+                                  const svgWidth = maxRowLength * pieceWidth + 20;
+                                  const svgHeight = rows.length * pieceHeight + 20;
+
+                                  return (
+                                    <svg width={svgWidth} height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
+                                      {rows.map((rowItems, rowIdx) =>
+                                        rowItems.map((item, colIdx) => {
+                                          const edges = {
+                                            left: colIdx > 0 ? 'notch' : 'flat',
+                                            right: colIdx < rowItems.length - 1 ? 'tab' : 'flat',
+                                            top: rowIdx > 0 && rows[rowIdx - 1][colIdx] ? 'notch' : 'flat',
+                                            bottom: rows[rowIdx + 1] && rows[rowIdx + 1][colIdx] ? 'tab' : 'flat'
+                                          };
+                                          const path = puzzlePieceGridPath(pieceWidth, pieceHeight, edges);
+                                          const x = 10 + colIdx * pieceWidth;
+                                          const y = 10 + rowIdx * pieceHeight;
+                                          const nameLines = wrapPuzzleText(item.name, 12);
+                                          const nameFontSize = nameLines.some(l => l.length > 10) ? 7.5 : 8.5;
+
+                                          return (
+                                            <g key={item.id} transform={`translate(${x}, ${y})`}>
+                                              <path
+                                                d={path}
+                                                fill="#fdfcf9"
+                                                stroke="#d4af37"
+                                                strokeWidth="0.75"
+                                              />
+                                              <text
+                                                x={pieceWidth / 2}
+                                                textAnchor="middle"
+                                                fill="#1e3a8a"
+                                                fontSize={nameFontSize}
+                                                fontWeight="400"
+                                                fontFamily="'Lora', serif"
+                                              >
+                                                {nameLines.map((line, i) => (
+                                                  <tspan
+                                                    key={i}
+                                                    x={pieceWidth / 2}
+                                                    y={pieceHeight / 2 - 14 + i * (nameFontSize + 2)}
+                                                  >
+                                                    {line}
+                                                  </tspan>
+                                                ))}
+                                              </text>
+                                              <text
+                                                x={pieceWidth / 2}
+                                                y={pieceHeight / 2 + 14}
+                                                textAnchor="middle"
+                                                fill="#d4af37"
+                                                fontSize="9"
+                                                fontWeight="600"
+                                                fontFamily="'Lora', serif"
+                                              >
+                                                Lv. {Math.floor((item.points || 0) / 3)}
+                                              </text>
+                                              {item.createdAt && (
+                                                <text
+                                                  x={pieceWidth / 2}
+                                                  y={pieceHeight / 2 + 27}
+                                                  textAnchor="middle"
+                                                  fill="#000000"
+                                                  fontSize="7"
+                                                  fontWeight="400"
+                                                  fontFamily="'Lora', serif"
+                                                >
+                                                  {new Date(item.createdAt).toLocaleDateString('de-DE')}
+                                                </text>
+                                              )}
+                                            </g>
+                                          );
+                                        })
+                                      )}
+                                    </svg>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Items list */}
+                          <div className="max-w-md space-y-4">
+                            <div className="flex items-center justify-between">
+                              <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase">
+                                {currentCategory?.labelPlural}
+                              </h2>
+                              <div className="flex items-center gap-3">
+                                {selectionMode && selectedIds.length > 0 && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); deleteSelectedItems(); }}
+                                    className="text-xs text-red-500 hover:text-red-600 font-light transition"
+                                  >
+                                    Löschen ({selectedIds.length})
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setReorderMode(!reorderMode);
+                                    setSelectionMode(false);
+                                    setSelectedIds([]);
+                                  }}
+                                  className={`text-xs font-light tracking-wide transition ${
+                                    reorderMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
+                                  }`}
+                                >
+                                  {reorderMode ? 'Fertig' : 'Neu anordnen'}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectionMode(!selectionMode);
+                                    setSelectedIds([]);
+                                    setReorderMode(false);
+                                  }}
+                                  className={`text-xs font-light tracking-wide transition ${
+                                    selectionMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
+                                  }`}
+                                >
+                                  {selectionMode ? 'Fertig' : 'Auswählen'}
+                                </button>
+                              </div>
+                            </div>
+
+                            {reorderMode && (
+                              <p className="text-xs text-slate-400 font-light -mt-2">Am Griff ziehen, um die Reihenfolge zu ändern</p>
+                            )}
+
+                            <div className="space-y-4">
+                              {sectionItems.map((item) => (
+                                <div
+                                  key={item.id}
+                                  data-item-id={item.id}
+                                  className={`group flex items-start gap-3 transition ${
+                                    selectionMode ? 'cursor-pointer' : ''
+                                  } ${
+                                    draggedId === item.id ? 'opacity-40' : 'opacity-100'
+                                  } ${
+                                    reorderMode && dragOverId === item.id && draggedId !== item.id
+                                      ? 'outline outline-2 outline-blue-300 rounded-lg'
+                                      : ''
+                                  }`}
+                                  onClick={(e) => { e.stopPropagation(); selectionMode && toggleSelectItem(item.id); }}
+                                >
+                                  {reorderMode && (
+                                    <div
+                                      onPointerDown={(e) => handleDragHandlePointerDown(e, item.id)}
+                                      onPointerMove={handleDragHandlePointerMove}
+                                      onPointerUp={handleDragHandlePointerUp}
+                                      onPointerCancel={handleDragHandlePointerUp}
+                                      className="mt-0.5 -my-1.5 -ml-1.5 p-1.5 flex-shrink-0 text-slate-400 select-none touch-none cursor-grab active:cursor-grabbing"
+                                    >
+                                      ⠿
+                                    </div>
+                                  )}
+                                  {selectionMode && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); toggleSelectItem(item.id); }}
+                                      className="mt-0.5 flex-shrink-0"
+                                    >
+                                      {selectedIds.includes(item.id) ? (
+                                        <CheckCircle2 className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+                                      ) : (
+                                        <Circle className="w-4 h-4 text-slate-300" strokeWidth={1.5} />
+                                      )}
+                                    </button>
+                                  )}
+
+                                  <div className="flex-1">
+                                    <div className="flex justify-between items-start mb-2">
+                                      <h3 className={`text-sm font-light ${
+                                        item.failed ? 'text-slate-400 line-through' : item.completed ? 'text-green-700 line-through' : 'text-slate-900'
+                                      }`}>{item.name}</h3>
+                                      {!selectionMode && (
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
+                                            className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                                          >
+                                            <Trash2 className="w-3 h-3" strokeWidth={1.5} />
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-xs text-slate-400">Level</span>
+                                        <span className="text-sm font-light text-blue-600">{Math.floor((item.points || 0) / 3)}</span>
+                                      </div>
+                                      <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
+                                          style={{ width: `${(((item.points || 0) % 3) / 3) * 100}%` }}
+                                        />
+                                      </div>
+                                      <p className="text-xs text-slate-400 text-right">{item.points || 0} Teilpunkte</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       )}
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingVirtueGroupId(group.id);
-                            setEditingVirtueGroupName(group.name);
-                          }}
-                          className="p-1.5 -m-1.5 text-slate-300 hover:text-blue-500 transition opacity-100 sm:opacity-0 sm:group-hover/vgroup:opacity-100"
-                        >
-                          <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteVirtueGroup(group.id); }}
-                          className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover/vgroup:opacity-100"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                        </button>
-                      </div>
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
-        )}
+        </div>
+      </div>
+    );
+  }
 
-        {section === 'principles' && !selectedVirtueGroup && virtueGroups.length > 0 && sectionItems.length > 0 && (
-          <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-4">Ohne Kategorie</h2>
-        )}
-
-        {/* Add new - ganz oben. Tugenden lassen sich nur innerhalb einer Oberkategorie anlegen */}
-        {!(section === 'principles' && !selectedVirtueGroup) && (
-          <div className="mb-8 sm:mb-10 max-w-sm">
-            {section === 'goals' ? (
-              <MentionTextInput
-                placeholder={`${currentCategory?.label} (@Tugend zum Verknüpfen)`}
-                virtues={allVirtueItems}
-                onSubmit={(text, linkedIds) => addItem(text, linkedIds)}
-                className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
-              />
-            ) : (
-              <input
-                type="text"
-                value={newItemName}
-                onChange={(e) => setNewItemName(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && newItemName.trim()) {
-                    addItem(newItemName);
-                    setNewItemName('');
-                  }
-                }}
-                placeholder={currentCategory?.label}
-                className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
-              />
-            )}
+  // SECTION VIEW (Ziele, Lebensbereiche, Gewohnheiten)
+  return (
+    <div className="min-h-screen bg-white p-4 sm:p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="flex items-start gap-3 sm:gap-6 mb-6 pb-4 sm:mb-12 sm:pb-8 border-b border-slate-200">
+          <button
+            onClick={() => setSection('hub')}
+            className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
+          >
+            <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
+          </button>
+          <div>
+            <h1 className="text-2xl sm:text-4xl font-light text-slate-900 tracking-tight">
+              {currentCategory?.label}
+            </h1>
+            <p className="text-sm text-slate-400 font-light mt-1">{sectionItems.length} {sectionItems.length === 1 ? currentCategory?.label : currentCategory?.labelPlural}</p>
           </div>
-        )}
+        </div>
 
-        {/* Puzzle-Piece Visualisierung - nur für Tugenden, direkt sichtbar */}
-        {section === 'principles' && sectionItems.length > 0 && (
-          <div className="mb-8 pb-6 sm:mb-12 sm:pb-8 border-b border-slate-100">
-            <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-6 sm:mb-8 text-center">
-              Deine Tugenden fügen sich zusammen
-            </h2>
-            <div className="flex justify-center overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
-              {(() => {
-                const perRow = 3;
-                const pieceWidth = 96;
-                const pieceHeight = 74;
-                const rows = [];
-                for (let i = 0; i < sectionItems.length; i += perRow) {
-                  rows.push(sectionItems.slice(i, i + perRow));
+        {/* Add new */}
+        <div className="mb-8 sm:mb-10 max-w-sm">
+          {section === 'goals' ? (
+            <MentionTextInput
+              placeholder={`${currentCategory?.label} (@Tugend zum Verknüpfen)`}
+              virtues={allVirtueItems}
+              onSubmit={(text, linkedIds) => addItem(text, linkedIds)}
+              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+            />
+          ) : (
+            <input
+              type="text"
+              value={newItemName}
+              onChange={(e) => setNewItemName(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && newItemName.trim()) {
+                  addItem(newItemName);
+                  setNewItemName('');
                 }
-                const maxRowLength = Math.min(sectionItems.length, perRow);
-                const svgWidth = maxRowLength * pieceWidth + 20;
-                const svgHeight = rows.length * pieceHeight + 20;
-
-                return (
-                  <svg width={svgWidth} height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
-                    {rows.map((rowItems, rowIdx) =>
-                      rowItems.map((item, colIdx) => {
-                        const edges = {
-                          left: colIdx > 0 ? 'notch' : 'flat',
-                          right: colIdx < rowItems.length - 1 ? 'tab' : 'flat',
-                          top: rowIdx > 0 && rows[rowIdx - 1][colIdx] ? 'notch' : 'flat',
-                          bottom: rows[rowIdx + 1] && rows[rowIdx + 1][colIdx] ? 'tab' : 'flat'
-                        };
-                        const path = puzzlePieceGridPath(pieceWidth, pieceHeight, edges);
-                        const x = 10 + colIdx * pieceWidth;
-                        const y = 10 + rowIdx * pieceHeight;
-                        const nameLines = wrapPuzzleText(item.name, 12);
-                        const nameFontSize = nameLines.some(l => l.length > 10) ? 7.5 : 8.5;
-
-                        return (
-                          <g key={item.id} transform={`translate(${x}, ${y})`}>
-                            <path
-                              d={path}
-                              fill="#fdfcf9"
-                              stroke="#d4af37"
-                              strokeWidth="0.75"
-                            />
-                            <text
-                              x={pieceWidth / 2}
-                              textAnchor="middle"
-                              fill="#1e3a8a"
-                              fontSize={nameFontSize}
-                              fontWeight="400"
-                              fontFamily="'Lora', serif"
-                            >
-                              {nameLines.map((line, i) => (
-                                <tspan
-                                  key={i}
-                                  x={pieceWidth / 2}
-                                  y={pieceHeight / 2 - 14 + i * (nameFontSize + 2)}
-                                >
-                                  {line}
-                                </tspan>
-                              ))}
-                            </text>
-                            <text
-                              x={pieceWidth / 2}
-                              y={pieceHeight / 2 + 14}
-                              textAnchor="middle"
-                              fill="#d4af37"
-                              fontSize="9"
-                              fontWeight="600"
-                              fontFamily="'Lora', serif"
-                            >
-                              Lv. {Math.floor((item.points || 0) / 3)}
-                            </text>
-                            {item.createdAt && (
-                              <text
-                                x={pieceWidth / 2}
-                                y={pieceHeight / 2 + 27}
-                                textAnchor="middle"
-                                fill="#000000"
-                                fontSize="7"
-                                fontWeight="400"
-                                fontFamily="'Lora', serif"
-                              >
-                                {new Date(item.createdAt).toLocaleDateString('de-DE')}
-                              </text>
-                            )}
-                          </g>
-                        );
-                      })
-                    )}
-                  </svg>
-                );
-              })()}
-            </div>
-          </div>
-        )}
+              }}
+              placeholder={currentCategory?.label}
+              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+            />
+          )}
+        </div>
 
         <div className="max-w-md">
           {/* Items list */}
@@ -1105,35 +1287,19 @@ export default function YuYuApp() {
                       )}
                     </div>
 
-                    {section === 'principles' ? (
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-slate-400">Level</span>
-                          <span className="text-sm font-light text-blue-600">{Math.floor((item.points || 0) / 3)}</span>
-                        </div>
-                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
-                            style={{ width: `${(((item.points || 0) % 3) / 3) * 100}%` }}
-                          />
-                        </div>
-                        <p className="text-xs text-slate-400 text-right">{item.points || 0} Teilpunkte</p>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-slate-400">Level</span>
+                        <span className="text-sm font-light text-blue-600">{item.level}</span>
                       </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-slate-400">Level</span>
-                          <span className="text-sm font-light text-blue-600">{item.level}</span>
-                        </div>
-                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
-                            style={{ width: `${(item.experience / item.maxExperience) * 100}%` }}
-                          />
-                        </div>
-                        <p className="text-xs text-slate-400 text-right">{item.experience}/{item.maxExperience}</p>
+                      <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
+                          style={{ width: `${(item.experience / item.maxExperience) * 100}%` }}
+                        />
                       </div>
-                    )}
+                      <p className="text-xs text-slate-400 text-right">{item.experience}/{item.maxExperience}</p>
+                    </div>
                   </div>
                 </div>
               ))}
