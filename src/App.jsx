@@ -153,6 +153,7 @@ export default function YuYuApp() {
   const [editingVirtueGroupId, setEditingVirtueGroupId] = useState(null);
   const [editingVirtueGroupName, setEditingVirtueGroupName] = useState('');
   const [hearts, setHearts] = useState(() => loadJSON('yuyu-hearts', MAX_HEARTS));
+  const importFileInputRef = useRef(null);
 
   const categories = [
     { id: 'goals', label: 'Ziel', labelPlural: 'Ziele', startAngle: 0, endAngle: 90 },
@@ -177,6 +178,35 @@ export default function YuYuApp() {
     localStorage.setItem('yuyu-todos', JSON.stringify(todos));
     localStorage.setItem('yuyu-virtue-groups', JSON.stringify(virtueGroups));
     localStorage.setItem('yuyu-hearts', JSON.stringify(hearts));
+  };
+
+  // Backup: alle Daten als JSON-Datei herunterladen, da nichts außerhalb dieses Browsers gespeichert wird
+  const exportData = () => {
+    const data = { items, todos, virtueGroups, hearts, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `yuyu-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importData = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!window.confirm('Vorhandene Daten mit dieser Datei überschreiben?')) return;
+        if (Array.isArray(data.items)) setItems(data.items);
+        if (Array.isArray(data.todos)) setTodos(data.todos);
+        if (Array.isArray(data.virtueGroups)) setVirtueGroups(data.virtueGroups);
+        if (typeof data.hearts === 'number') setHearts(data.hearts);
+      } catch (err) {
+        window.alert('Datei konnte nicht gelesen werden - ist es eine gültige YuYu-Backup-Datei?');
+      }
+    };
+    reader.readAsText(file);
   };
 
   const addItem = (name, linkedVirtues = []) => {
@@ -565,6 +595,33 @@ export default function YuYuApp() {
 
         {/* Bottom info */}
         <p className="text-slate-400 text-xs font-light tracking-wide mt-4">click a segment to begin</p>
+
+        {/* Backup: alle Daten liegen nur lokal in diesem Browser - Export/Import als manuelle Sicherung */}
+        <div className="flex items-center gap-4 mt-8">
+          <button
+            onClick={exportData}
+            className="text-xs text-slate-400 hover:text-blue-600 transition font-light"
+          >
+            Daten exportieren
+          </button>
+          <button
+            onClick={() => importFileInputRef.current?.click()}
+            className="text-xs text-slate-400 hover:text-blue-600 transition font-light"
+          >
+            Daten importieren
+          </button>
+          <input
+            ref={importFileInputRef}
+            type="file"
+            accept="application/json"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importData(file);
+              e.target.value = '';
+            }}
+            className="hidden"
+          />
+        </div>
       </div>
     );
   }
