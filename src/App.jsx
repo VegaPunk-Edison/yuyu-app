@@ -793,325 +793,380 @@ export default function YuYuApp() {
               </button>
             </div>
             {virtueGroups.length > 0 && (
-              <div className="space-y-2 max-w-sm">
-                {virtueGroups.map(group => {
-                  const groupItems = items.filter(i => i.type === 'principles' && i.groupId === group.id);
-                  const groupPoints = groupItems.reduce((sum, i) => sum + (i.points || 0), 0);
-                  const groupLevel = Math.floor(groupPoints / 3);
-                  const isEditingGroup = editingVirtueGroupId === group.id;
-                  const isOpen = selectedVirtueGroup === group.id;
-                  return (
-                    <div
-                      key={group.id}
-                      className="border border-slate-200 rounded-lg overflow-hidden transition hover:border-blue-300"
-                    >
-                      <div
-                        onClick={() => {
-                          if (isEditingGroup) return;
-                          setSelectedVirtueGroup(prev => (prev === group.id ? null : group.id));
-                          setSelectionMode(false);
-                          setSelectedIds([]);
-                          setReorderMode(false);
-                          setDraggedId(null);
-                          setDragOverId(null);
-                        }}
-                        className="group/vgroup flex items-center justify-between px-4 py-3 cursor-pointer"
-                      >
-                        {isEditingGroup ? (
-                          <input
-                            autoFocus
-                            value={editingVirtueGroupName}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => setEditingVirtueGroupName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                renameVirtueGroup(group.id, editingVirtueGroupName);
-                                setEditingVirtueGroupId(null);
-                              }
-                              if (e.key === 'Escape') setEditingVirtueGroupId(null);
-                            }}
-                            onBlur={() => {
-                              renameVirtueGroup(group.id, editingVirtueGroupName);
-                              setEditingVirtueGroupId(null);
-                            }}
-                            className="flex-1 min-w-0 text-sm text-slate-900 font-medium bg-transparent border-b border-blue-400 outline-none"
-                          />
-                        ) : (
-                          <div>
-                            <h3 className="text-sm text-slate-900 font-medium">{group.name}</h3>
-                            <p className="text-xs text-slate-400 font-light">
-                              {groupItems.length} {groupItems.length === 1 ? 'Tugend' : 'Tugenden'} · Gesamtlevel {groupLevel}
-                            </p>
-                          </div>
+              <>
+                {/* Oberkategorien: eigene Puzzleteile, die sich zu einem großen Ganzen zusammenfügen */}
+                <div className="flex justify-center overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+                  {(() => {
+                    const perRow = 3;
+                    const pieceWidth = 168;
+                    const pieceHeight = 128;
+                    const rows = [];
+                    for (let i = 0; i < virtueGroups.length; i += perRow) {
+                      rows.push(virtueGroups.slice(i, i + perRow));
+                    }
+                    const maxRowLength = Math.min(virtueGroups.length, perRow);
+                    const svgWidth = maxRowLength * pieceWidth + 20;
+                    const svgHeight = rows.length * pieceHeight + 20;
+
+                    return (
+                      <svg width={svgWidth} height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
+                        {rows.map((rowGroups, rowIdx) =>
+                          rowGroups.map((group, colIdx) => {
+                            const edges = {
+                              left: colIdx > 0 ? 'notch' : 'flat',
+                              right: colIdx < rowGroups.length - 1 ? 'tab' : 'flat',
+                              top: rowIdx > 0 && rows[rowIdx - 1][colIdx] ? 'notch' : 'flat',
+                              bottom: rows[rowIdx + 1] && rows[rowIdx + 1][colIdx] ? 'tab' : 'flat'
+                            };
+                            const path = puzzlePieceGridPath(pieceWidth, pieceHeight, edges);
+                            const x = 10 + colIdx * pieceWidth;
+                            const y = 10 + rowIdx * pieceHeight;
+                            const groupItems = items.filter(i => i.type === 'principles' && i.groupId === group.id);
+                            const groupPoints = groupItems.reduce((sum, i) => sum + (i.points || 0), 0);
+                            const groupLevel = Math.floor(groupPoints / 3);
+                            const isEditingGroup = editingVirtueGroupId === group.id;
+                            const isOpen = selectedVirtueGroup === group.id;
+
+                            const togglePiece = () => {
+                              if (isEditingGroup) return;
+                              setSelectedVirtueGroup(prev => (prev === group.id ? null : group.id));
+                              setSelectionMode(false);
+                              setSelectedIds([]);
+                              setReorderMode(false);
+                              setDraggedId(null);
+                              setDragOverId(null);
+                            };
+
+                            return (
+                              <g
+                                key={group.id}
+                                transform={`translate(${x}, ${y})`}
+                                onClick={togglePiece}
+                                className="cursor-pointer"
+                              >
+                                <path
+                                  d={path}
+                                  fill={isOpen ? '#eff6ff' : '#fdfcf9'}
+                                  stroke={isOpen ? '#2563eb' : '#d4af37'}
+                                  strokeWidth={isOpen ? 1.25 : 0.75}
+                                  className="transition-colors"
+                                />
+                                <foreignObject x="12" y="8" width={pieceWidth - 24} height={pieceHeight - 30}>
+                                  <div className="h-full flex flex-col items-center justify-center text-center px-1">
+                                    {isEditingGroup ? (
+                                      <input
+                                        autoFocus
+                                        value={editingVirtueGroupName}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) => setEditingVirtueGroupName(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            renameVirtueGroup(group.id, editingVirtueGroupName);
+                                            setEditingVirtueGroupId(null);
+                                          }
+                                          if (e.key === 'Escape') setEditingVirtueGroupId(null);
+                                        }}
+                                        onBlur={() => {
+                                          renameVirtueGroup(group.id, editingVirtueGroupName);
+                                          setEditingVirtueGroupId(null);
+                                        }}
+                                        className="w-full text-xs text-slate-900 font-medium bg-transparent border-b border-blue-400 outline-none text-center"
+                                      />
+                                    ) : (
+                                      <>
+                                        <h3 className="text-xs sm:text-sm text-slate-900 font-medium leading-tight break-words">{group.name}</h3>
+                                        <p className="text-[10px] text-slate-400 font-light mt-1 leading-tight">
+                                          {groupItems.length} {groupItems.length === 1 ? 'Tugend' : 'Tugenden'} · Level {groupLevel}
+                                        </p>
+                                      </>
+                                    )}
+                                  </div>
+                                </foreignObject>
+                                {!isEditingGroup && (
+                                  <foreignObject x="0" y={pieceHeight - 24} width={pieceWidth} height="22">
+                                    <div className="flex items-center justify-center gap-2">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingVirtueGroupId(group.id);
+                                          setEditingVirtueGroupName(group.name);
+                                        }}
+                                        className="p-1 text-slate-300 hover:text-blue-500 transition"
+                                      >
+                                        <Pencil className="w-3 h-3" strokeWidth={1.5} />
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); deleteVirtueGroup(group.id); }}
+                                        className="p-1 text-slate-300 hover:text-red-500 transition"
+                                      >
+                                        <Trash2 className="w-3 h-3" strokeWidth={1.5} />
+                                      </button>
+                                      <ChevronDown
+                                        className={`w-3.5 h-3.5 text-slate-300 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                                        strokeWidth={1.5}
+                                      />
+                                    </div>
+                                  </foreignObject>
+                                )}
+                              </g>
+                            );
+                          })
                         )}
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingVirtueGroupId(group.id);
-                              setEditingVirtueGroupName(group.name);
+                      </svg>
+                    );
+                  })()}
+                </div>
+
+                {/* Aufgeklapptes Panel für die aktive Oberkategorie */}
+                {(() => {
+                  const openGroup = virtueGroups.find(g => g.id === selectedVirtueGroup);
+                  if (!openGroup) return null;
+                  return (
+                    <div key={openGroup.id} className="max-w-md mx-auto mt-6 border border-blue-200 rounded-lg overflow-hidden">
+                      <div className="px-4 pb-6 pt-4">
+                        <h3 className="text-sm text-slate-900 font-medium mb-4">{openGroup.name}</h3>
+
+                        {/* Add Tugend - nur innerhalb der offenen Oberkategorie möglich */}
+                        <div className="mb-8 max-w-sm">
+                          <input
+                            type="text"
+                            value={newItemName}
+                            onChange={(e) => setNewItemName(e.target.value)}
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter' && newItemName.trim()) {
+                                addItem(newItemName);
+                                setNewItemName('');
+                              }
                             }}
-                            className="p-1.5 -m-1.5 text-slate-300 hover:text-blue-500 transition opacity-100 sm:opacity-0 sm:group-hover/vgroup:opacity-100"
-                          >
-                            <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); deleteVirtueGroup(group.id); }}
-                            className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover/vgroup:opacity-100"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                          </button>
-                          <ChevronDown
-                            className={`w-4 h-4 text-slate-300 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-                            strokeWidth={1.5}
+                            placeholder="Tugend hinzufügen"
+                            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
                           />
                         </div>
-                      </div>
 
-                      {isOpen && (
-                        <div className="px-4 pb-6 pt-2 border-t border-slate-100">
-                          {/* Add Tugend - nur innerhalb der offenen Oberkategorie möglich */}
-                          <div className="mb-8 max-w-sm">
-                            <input
-                              type="text"
-                              value={newItemName}
-                              onChange={(e) => setNewItemName(e.target.value)}
-                              onKeyPress={(e) => {
-                                if (e.key === 'Enter' && newItemName.trim()) {
-                                  addItem(newItemName);
-                                  setNewItemName('');
+                        {/* Puzzle-Piece Visualisierung */}
+                        {sectionItems.length > 0 && (
+                          <div className="mb-8 pb-6 border-b border-slate-100">
+                            <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-6 sm:mb-8 text-center">
+                              Deine Tugenden fügen sich zusammen
+                            </h2>
+                            <div className="flex justify-center overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+                              {(() => {
+                                const perRow = 3;
+                                const pieceWidth = 96;
+                                const pieceHeight = 74;
+                                const rows = [];
+                                for (let i = 0; i < sectionItems.length; i += perRow) {
+                                  rows.push(sectionItems.slice(i, i + perRow));
                                 }
-                              }}
-                              placeholder="Tugend hinzufügen"
-                              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
-                            />
-                          </div>
+                                const maxRowLength = Math.min(sectionItems.length, perRow);
+                                const svgWidth = maxRowLength * pieceWidth + 20;
+                                const svgHeight = rows.length * pieceHeight + 20;
 
-                          {/* Puzzle-Piece Visualisierung */}
-                          {sectionItems.length > 0 && (
-                            <div className="mb-8 pb-6 border-b border-slate-100">
-                              <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-6 sm:mb-8 text-center">
-                                Deine Tugenden fügen sich zusammen
-                              </h2>
-                              <div className="flex justify-center overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
-                                {(() => {
-                                  const perRow = 3;
-                                  const pieceWidth = 96;
-                                  const pieceHeight = 74;
-                                  const rows = [];
-                                  for (let i = 0; i < sectionItems.length; i += perRow) {
-                                    rows.push(sectionItems.slice(i, i + perRow));
-                                  }
-                                  const maxRowLength = Math.min(sectionItems.length, perRow);
-                                  const svgWidth = maxRowLength * pieceWidth + 20;
-                                  const svgHeight = rows.length * pieceHeight + 20;
+                                return (
+                                  <svg width={svgWidth} height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
+                                    {rows.map((rowItems, rowIdx) =>
+                                      rowItems.map((item, colIdx) => {
+                                        const edges = {
+                                          left: colIdx > 0 ? 'notch' : 'flat',
+                                          right: colIdx < rowItems.length - 1 ? 'tab' : 'flat',
+                                          top: rowIdx > 0 && rows[rowIdx - 1][colIdx] ? 'notch' : 'flat',
+                                          bottom: rows[rowIdx + 1] && rows[rowIdx + 1][colIdx] ? 'tab' : 'flat'
+                                        };
+                                        const path = puzzlePieceGridPath(pieceWidth, pieceHeight, edges);
+                                        const x = 10 + colIdx * pieceWidth;
+                                        const y = 10 + rowIdx * pieceHeight;
+                                        const nameLines = wrapPuzzleText(item.name, 12);
+                                        const nameFontSize = nameLines.some(l => l.length > 10) ? 7.5 : 8.5;
 
-                                  return (
-                                    <svg width={svgWidth} height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
-                                      {rows.map((rowItems, rowIdx) =>
-                                        rowItems.map((item, colIdx) => {
-                                          const edges = {
-                                            left: colIdx > 0 ? 'notch' : 'flat',
-                                            right: colIdx < rowItems.length - 1 ? 'tab' : 'flat',
-                                            top: rowIdx > 0 && rows[rowIdx - 1][colIdx] ? 'notch' : 'flat',
-                                            bottom: rows[rowIdx + 1] && rows[rowIdx + 1][colIdx] ? 'tab' : 'flat'
-                                          };
-                                          const path = puzzlePieceGridPath(pieceWidth, pieceHeight, edges);
-                                          const x = 10 + colIdx * pieceWidth;
-                                          const y = 10 + rowIdx * pieceHeight;
-                                          const nameLines = wrapPuzzleText(item.name, 12);
-                                          const nameFontSize = nameLines.some(l => l.length > 10) ? 7.5 : 8.5;
-
-                                          return (
-                                            <g key={item.id} transform={`translate(${x}, ${y})`}>
-                                              <path
-                                                d={path}
-                                                fill="#fdfcf9"
-                                                stroke="#d4af37"
-                                                strokeWidth="0.75"
-                                              />
+                                        return (
+                                          <g key={item.id} transform={`translate(${x}, ${y})`}>
+                                            <path
+                                              d={path}
+                                              fill="#fdfcf9"
+                                              stroke="#d4af37"
+                                              strokeWidth="0.75"
+                                            />
+                                            <text
+                                              x={pieceWidth / 2}
+                                              textAnchor="middle"
+                                              fill="#1e3a8a"
+                                              fontSize={nameFontSize}
+                                              fontWeight="400"
+                                              fontFamily="'Lora', serif"
+                                            >
+                                              {nameLines.map((line, i) => (
+                                                <tspan
+                                                  key={i}
+                                                  x={pieceWidth / 2}
+                                                  y={pieceHeight / 2 - 14 + i * (nameFontSize + 2)}
+                                                >
+                                                  {line}
+                                                </tspan>
+                                              ))}
+                                            </text>
+                                            <text
+                                              x={pieceWidth / 2}
+                                              y={pieceHeight / 2 + 14}
+                                              textAnchor="middle"
+                                              fill="#d4af37"
+                                              fontSize="9"
+                                              fontWeight="600"
+                                              fontFamily="'Lora', serif"
+                                            >
+                                              Lv. {Math.floor((item.points || 0) / 3)}
+                                            </text>
+                                            {item.createdAt && (
                                               <text
                                                 x={pieceWidth / 2}
+                                                y={pieceHeight / 2 + 27}
                                                 textAnchor="middle"
-                                                fill="#1e3a8a"
-                                                fontSize={nameFontSize}
+                                                fill="#000000"
+                                                fontSize="7"
                                                 fontWeight="400"
                                                 fontFamily="'Lora', serif"
                                               >
-                                                {nameLines.map((line, i) => (
-                                                  <tspan
-                                                    key={i}
-                                                    x={pieceWidth / 2}
-                                                    y={pieceHeight / 2 - 14 + i * (nameFontSize + 2)}
-                                                  >
-                                                    {line}
-                                                  </tspan>
-                                                ))}
+                                                {new Date(item.createdAt).toLocaleDateString('de-DE')}
                                               </text>
-                                              <text
-                                                x={pieceWidth / 2}
-                                                y={pieceHeight / 2 + 14}
-                                                textAnchor="middle"
-                                                fill="#d4af37"
-                                                fontSize="9"
-                                                fontWeight="600"
-                                                fontFamily="'Lora', serif"
-                                              >
-                                                Lv. {Math.floor((item.points || 0) / 3)}
-                                              </text>
-                                              {item.createdAt && (
-                                                <text
-                                                  x={pieceWidth / 2}
-                                                  y={pieceHeight / 2 + 27}
-                                                  textAnchor="middle"
-                                                  fill="#000000"
-                                                  fontSize="7"
-                                                  fontWeight="400"
-                                                  fontFamily="'Lora', serif"
-                                                >
-                                                  {new Date(item.createdAt).toLocaleDateString('de-DE')}
-                                                </text>
-                                              )}
-                                            </g>
-                                          );
-                                        })
-                                      )}
-                                    </svg>
-                                  );
-                                })()}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Items list */}
-                          <div className="max-w-md space-y-4">
-                            <div className="flex items-center justify-between">
-                              <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase">
-                                {currentCategory?.labelPlural}
-                              </h2>
-                              <div className="flex items-center gap-3">
-                                {selectionMode && selectedIds.length > 0 && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); deleteSelectedItems(); }}
-                                    className="text-xs text-red-500 hover:text-red-600 font-light transition"
-                                  >
-                                    Löschen ({selectedIds.length})
-                                  </button>
-                                )}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setReorderMode(!reorderMode);
-                                    setSelectionMode(false);
-                                    setSelectedIds([]);
-                                  }}
-                                  className={`text-xs font-light tracking-wide transition ${
-                                    reorderMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
-                                  }`}
-                                >
-                                  {reorderMode ? 'Fertig' : 'Neu anordnen'}
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectionMode(!selectionMode);
-                                    setSelectedIds([]);
-                                    setReorderMode(false);
-                                  }}
-                                  className={`text-xs font-light tracking-wide transition ${
-                                    selectionMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
-                                  }`}
-                                >
-                                  {selectionMode ? 'Fertig' : 'Auswählen'}
-                                </button>
-                              </div>
-                            </div>
-
-                            {reorderMode && (
-                              <p className="text-xs text-slate-400 font-light -mt-2">Am Griff ziehen, um die Reihenfolge zu ändern</p>
-                            )}
-
-                            <div className="space-y-4">
-                              {sectionItems.map((item) => (
-                                <div
-                                  key={item.id}
-                                  data-item-id={item.id}
-                                  className={`group flex items-start gap-3 transition ${
-                                    selectionMode ? 'cursor-pointer' : ''
-                                  } ${
-                                    draggedId === item.id ? 'opacity-40' : 'opacity-100'
-                                  } ${
-                                    reorderMode && dragOverId === item.id && draggedId !== item.id
-                                      ? 'outline outline-2 outline-blue-300 rounded-lg'
-                                      : ''
-                                  }`}
-                                  onClick={(e) => { e.stopPropagation(); selectionMode && toggleSelectItem(item.id); }}
-                                >
-                                  {reorderMode && (
-                                    <div
-                                      onPointerDown={(e) => handleDragHandlePointerDown(e, item.id)}
-                                      onPointerMove={handleDragHandlePointerMove}
-                                      onPointerUp={handleDragHandlePointerUp}
-                                      onPointerCancel={handleDragHandlePointerUp}
-                                      className="mt-0.5 -my-1.5 -ml-1.5 p-1.5 flex-shrink-0 text-slate-400 select-none touch-none cursor-grab active:cursor-grabbing"
-                                    >
-                                      ⠿
-                                    </div>
-                                  )}
-                                  {selectionMode && (
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); toggleSelectItem(item.id); }}
-                                      className="mt-0.5 flex-shrink-0"
-                                    >
-                                      {selectedIds.includes(item.id) ? (
-                                        <CheckCircle2 className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
-                                      ) : (
-                                        <Circle className="w-4 h-4 text-slate-300" strokeWidth={1.5} />
-                                      )}
-                                    </button>
-                                  )}
-
-                                  <div className="flex-1">
-                                    <div className="flex justify-between items-start mb-2">
-                                      <h3 className={`text-sm font-light ${
-                                        item.failed ? 'text-slate-400 line-through' : item.completed ? 'text-green-700 line-through' : 'text-slate-900'
-                                      }`}>{item.name}</h3>
-                                      {!selectionMode && (
-                                        <div className="flex items-center gap-1">
-                                          <button
-                                            onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
-                                            className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                                          >
-                                            <Trash2 className="w-3 h-3" strokeWidth={1.5} />
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    <div className="space-y-2">
-                                      <div className="flex justify-between items-center">
-                                        <span className="text-xs text-slate-400">Level</span>
-                                        <span className="text-sm font-light text-blue-600">{Math.floor((item.points || 0) / 3)}</span>
-                                      </div>
-                                      <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                                        <div
-                                          className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
-                                          style={{ width: `${(((item.points || 0) % 3) / 3) * 100}%` }}
-                                        />
-                                      </div>
-                                      <p className="text-xs text-slate-400 text-right">{item.points || 0} Teilpunkte</p>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
+                                            )}
+                                          </g>
+                                        );
+                                      })
+                                    )}
+                                  </svg>
+                                );
+                              })()}
                             </div>
                           </div>
+                        )}
+
+                        {/* Items list */}
+                        <div className="max-w-md space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase">
+                              {currentCategory?.labelPlural}
+                            </h2>
+                            <div className="flex items-center gap-3">
+                              {selectionMode && selectedIds.length > 0 && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); deleteSelectedItems(); }}
+                                  className="text-xs text-red-500 hover:text-red-600 font-light transition"
+                                >
+                                  Löschen ({selectedIds.length})
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReorderMode(!reorderMode);
+                                  setSelectionMode(false);
+                                  setSelectedIds([]);
+                                }}
+                                className={`text-xs font-light tracking-wide transition ${
+                                  reorderMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
+                                }`}
+                              >
+                                {reorderMode ? 'Fertig' : 'Neu anordnen'}
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectionMode(!selectionMode);
+                                  setSelectedIds([]);
+                                  setReorderMode(false);
+                                }}
+                                className={`text-xs font-light tracking-wide transition ${
+                                  selectionMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
+                                }`}
+                              >
+                                {selectionMode ? 'Fertig' : 'Auswählen'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {reorderMode && (
+                            <p className="text-xs text-slate-400 font-light -mt-2">Am Griff ziehen, um die Reihenfolge zu ändern</p>
+                          )}
+
+                          <div className="space-y-4">
+                            {sectionItems.map((item) => (
+                              <div
+                                key={item.id}
+                                data-item-id={item.id}
+                                className={`group flex items-start gap-3 transition ${
+                                  selectionMode ? 'cursor-pointer' : ''
+                                } ${
+                                  draggedId === item.id ? 'opacity-40' : 'opacity-100'
+                                } ${
+                                  reorderMode && dragOverId === item.id && draggedId !== item.id
+                                    ? 'outline outline-2 outline-blue-300 rounded-lg'
+                                    : ''
+                                }`}
+                                onClick={(e) => { e.stopPropagation(); selectionMode && toggleSelectItem(item.id); }}
+                              >
+                                {reorderMode && (
+                                  <div
+                                    onPointerDown={(e) => handleDragHandlePointerDown(e, item.id)}
+                                    onPointerMove={handleDragHandlePointerMove}
+                                    onPointerUp={handleDragHandlePointerUp}
+                                    onPointerCancel={handleDragHandlePointerUp}
+                                    className="mt-0.5 -my-1.5 -ml-1.5 p-1.5 flex-shrink-0 text-slate-400 select-none touch-none cursor-grab active:cursor-grabbing"
+                                  >
+                                    ⠿
+                                  </div>
+                                )}
+                                {selectionMode && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); toggleSelectItem(item.id); }}
+                                    className="mt-0.5 flex-shrink-0"
+                                  >
+                                    {selectedIds.includes(item.id) ? (
+                                      <CheckCircle2 className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+                                    ) : (
+                                      <Circle className="w-4 h-4 text-slate-300" strokeWidth={1.5} />
+                                    )}
+                                  </button>
+                                )}
+
+                                <div className="flex-1">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <h3 className={`text-sm font-light ${
+                                      item.failed ? 'text-slate-400 line-through' : item.completed ? 'text-green-700 line-through' : 'text-slate-900'
+                                    }`}>{item.name}</h3>
+                                    {!selectionMode && (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
+                                          className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                                        >
+                                          <Trash2 className="w-3 h-3" strokeWidth={1.5} />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-xs text-slate-400">Level</span>
+                                      <span className="text-sm font-light text-blue-600">{Math.floor((item.points || 0) / 3)}</span>
+                                    </div>
+                                    <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
+                                        style={{ width: `${(((item.points || 0) % 3) / 3) * 100}%` }}
+                                      />
+                                    </div>
+                                    <p className="text-xs text-slate-400 text-right">{item.points || 0} Teilpunkte</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      )}
+                      </div>
                     </div>
                   );
-                })}
-              </div>
+                })()}
+              </>
             )}
           </div>
         </div>
