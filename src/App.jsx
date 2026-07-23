@@ -848,7 +848,7 @@ export default function YuYuApp() {
                               >
                                 <path
                                   d={path}
-                                  fill={isOpen ? '#0d2818' : '#fdfcf9'}
+                                  fill={isOpen ? '#2f4f3a' : '#fdfcf9'}
                                   stroke="#d4af37"
                                   strokeWidth={isOpen ? 1.25 : 0.75}
                                   className="transition-colors"
