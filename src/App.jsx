@@ -885,46 +885,7 @@ export default function YuYuApp() {
                   return (
                     <div key={openGroup.id} className="max-w-md mx-auto mt-6 border border-blue-200 rounded-lg overflow-hidden">
                       <div className="px-4 pb-6 pt-4">
-                        <div className="flex items-center justify-between gap-2 mb-4">
-                          {editingVirtueGroupId === openGroup.id ? (
-                            <input
-                              autoFocus
-                              value={editingVirtueGroupName}
-                              onChange={(e) => setEditingVirtueGroupName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  renameVirtueGroup(openGroup.id, editingVirtueGroupName);
-                                  setEditingVirtueGroupId(null);
-                                }
-                                if (e.key === 'Escape') setEditingVirtueGroupId(null);
-                              }}
-                              onBlur={() => {
-                                renameVirtueGroup(openGroup.id, editingVirtueGroupName);
-                                setEditingVirtueGroupId(null);
-                              }}
-                              className="flex-1 min-w-0 text-sm text-slate-900 font-medium bg-transparent border-b border-blue-400 outline-none"
-                            />
-                          ) : (
-                            <h3 className="text-sm text-slate-900 font-medium">{openGroup.name}</h3>
-                          )}
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <button
-                              onClick={() => {
-                                setEditingVirtueGroupId(openGroup.id);
-                                setEditingVirtueGroupName(openGroup.name);
-                              }}
-                              className="p-1.5 -m-1.5 text-slate-300 hover:text-blue-500 transition"
-                            >
-                              <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
-                            </button>
-                            <button
-                              onClick={() => deleteVirtueGroup(openGroup.id)}
-                              className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                            </button>
-                          </div>
-                        </div>
+                        <h3 className="text-sm text-slate-900 font-medium mb-4">{openGroup.name}</h3>
 
                         {/* Add Tugend - nur innerhalb der offenen Oberkategorie möglich */}
                         <div className="mb-8 max-w-sm">
@@ -1168,6 +1129,47 @@ export default function YuYuApp() {
                               );
                             })}
                           </div>
+                        </div>
+
+                        {/* Bearbeiten/Löschen der Oberkategorie - unterhalb der Tugenden-Liste */}
+                        <div className="max-w-md mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
+                          {editingVirtueGroupId === openGroup.id ? (
+                            <input
+                              autoFocus
+                              value={editingVirtueGroupName}
+                              onChange={(e) => setEditingVirtueGroupName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  renameVirtueGroup(openGroup.id, editingVirtueGroupName);
+                                  setEditingVirtueGroupId(null);
+                                }
+                                if (e.key === 'Escape') setEditingVirtueGroupId(null);
+                              }}
+                              onBlur={() => {
+                                renameVirtueGroup(openGroup.id, editingVirtueGroupName);
+                                setEditingVirtueGroupId(null);
+                              }}
+                              className="flex-1 min-w-0 text-sm text-slate-900 font-medium bg-transparent border-b border-blue-400 outline-none"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setEditingVirtueGroupId(openGroup.id);
+                                setEditingVirtueGroupName(openGroup.name);
+                              }}
+                              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-blue-600 transition"
+                            >
+                              <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
+                              Oberkategorie umbenennen
+                            </button>
+                          )}
+                          <button
+                            onClick={() => deleteVirtueGroup(openGroup.id)}
+                            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-500 transition flex-shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                            Löschen
+                          </button>
                         </div>
                       </div>
                     </div>
