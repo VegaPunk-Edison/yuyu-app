@@ -148,6 +148,7 @@ export default function YuYuApp() {
   const [draggedId, setDraggedId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [expandedItemIds, setExpandedItemIds] = useState([]);
+  const [virtuesListExpanded, setVirtuesListExpanded] = useState(false);
   const [virtueGroups, setVirtueGroups] = useState(() => loadJSON('yuyu-virtue-groups', []));
   const [selectedVirtueGroup, setSelectedVirtueGroup] = useState(null);
   const [newVirtueGroupName, setNewVirtueGroupName] = useState('');
@@ -1000,54 +1001,76 @@ export default function YuYuApp() {
                           </div>
                         )}
 
-                        {/* Items list */}
+                        {/* Items list - Tugenden ist selbst ein Toggle für die ganze Liste */}
                         <div className="max-w-md space-y-4">
-                          <div className="flex items-center justify-between">
-                            <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase">
-                              {currentCategory?.labelPlural}
-                            </h2>
-                            <div className="flex items-center gap-3">
-                              {selectionMode && selectedIds.length > 0 && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); deleteSelectedItems(); }}
-                                  className="text-xs text-red-500 hover:text-red-600 font-light transition"
-                                >
-                                  Löschen ({selectedIds.length})
-                                </button>
-                              )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setReorderMode(!reorderMode);
+                          <div
+                            className="flex items-center justify-between cursor-pointer"
+                            onClick={() => {
+                              setVirtuesListExpanded(prev => {
+                                const next = !prev;
+                                if (!next) {
+                                  setReorderMode(false);
                                   setSelectionMode(false);
                                   setSelectedIds([]);
-                                }}
-                                className={`text-xs font-light tracking-wide transition ${
-                                  reorderMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
-                                }`}
-                              >
-                                {reorderMode ? 'Fertig' : 'Neu anordnen'}
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectionMode(!selectionMode);
-                                  setSelectedIds([]);
-                                  setReorderMode(false);
-                                }}
-                                className={`text-xs font-light tracking-wide transition ${
-                                  selectionMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
-                                }`}
-                              >
-                                {selectionMode ? 'Fertig' : 'Auswählen'}
-                              </button>
+                                }
+                                return next;
+                              });
+                            }}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <ChevronDown
+                                className={`w-3.5 h-3.5 text-slate-400 transition-transform flex-shrink-0 ${virtuesListExpanded ? '' : '-rotate-90'}`}
+                                strokeWidth={1.5}
+                              />
+                              <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase">
+                                {currentCategory?.labelPlural}
+                              </h2>
                             </div>
+                            {virtuesListExpanded && (
+                              <div className="flex items-center gap-3">
+                                {selectionMode && selectedIds.length > 0 && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); deleteSelectedItems(); }}
+                                    className="text-xs text-red-500 hover:text-red-600 font-light transition"
+                                  >
+                                    Löschen ({selectedIds.length})
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setReorderMode(!reorderMode);
+                                    setSelectionMode(false);
+                                    setSelectedIds([]);
+                                  }}
+                                  className={`text-xs font-light tracking-wide transition ${
+                                    reorderMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
+                                  }`}
+                                >
+                                  {reorderMode ? 'Fertig' : 'Neu anordnen'}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectionMode(!selectionMode);
+                                    setSelectedIds([]);
+                                    setReorderMode(false);
+                                  }}
+                                  className={`text-xs font-light tracking-wide transition ${
+                                    selectionMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
+                                  }`}
+                                >
+                                  {selectionMode ? 'Fertig' : 'Auswählen'}
+                                </button>
+                              </div>
+                            )}
                           </div>
 
-                          {reorderMode && (
+                          {virtuesListExpanded && reorderMode && (
                             <p className="text-xs text-slate-400 font-light -mt-2">Am Griff ziehen, um die Reihenfolge zu ändern</p>
                           )}
 
+                          {virtuesListExpanded && (
                           <div className="space-y-1">
                             {sectionItems.map((item) => {
                               const isExpanded = expandedItemIds.includes(item.id);
@@ -1129,6 +1152,7 @@ export default function YuYuApp() {
                               );
                             })}
                           </div>
+                          )}
                         </div>
 
                         {/* Bearbeiten/Löschen der Oberkategorie - unterhalb der Tugenden-Liste */}
