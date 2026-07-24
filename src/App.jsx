@@ -147,7 +147,6 @@ export default function YuYuApp() {
   const [reorderMode, setReorderMode] = useState(false);
   const [draggedId, setDraggedId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
-  const [expandedItemIds, setExpandedItemIds] = useState([]);
   const [virtuesListExpanded, setVirtuesListExpanded] = useState(false);
   const [virtueGroups, setVirtueGroups] = useState(() => loadJSON('yuyu-virtue-groups', []));
   const [selectedVirtueGroup, setSelectedVirtueGroup] = useState(null);
@@ -328,10 +327,6 @@ export default function YuYuApp() {
 
   const toggleSelectItem = (id) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
-
-  const toggleItemExpanded = (id) => {
-    setExpandedItemIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
   const deleteSelectedItems = () => {
@@ -1071,70 +1066,64 @@ export default function YuYuApp() {
                           )}
 
                           {virtuesListExpanded && (
-                          <div className="space-y-1">
-                            {sectionItems.map((item) => {
-                              const isExpanded = expandedItemIds.includes(item.id);
-                              return (
+                          <div className="space-y-4">
+                            {sectionItems.map((item) => (
                               <div
                                 key={item.id}
                                 data-item-id={item.id}
-                                className={`group transition ${
+                                className={`group flex items-start gap-3 transition ${
+                                  selectionMode ? 'cursor-pointer' : ''
+                                } ${
                                   draggedId === item.id ? 'opacity-40' : 'opacity-100'
                                 } ${
                                   reorderMode && dragOverId === item.id && draggedId !== item.id
                                     ? 'outline outline-2 outline-blue-300 rounded-lg'
                                     : ''
                                 }`}
+                                onClick={(e) => { e.stopPropagation(); selectionMode && toggleSelectItem(item.id); }}
                               >
-                                <div
-                                  className="flex items-center gap-2 py-1.5 cursor-pointer"
-                                  onClick={(e) => { e.stopPropagation(); selectionMode ? toggleSelectItem(item.id) : toggleItemExpanded(item.id); }}
-                                >
-                                  {reorderMode && (
-                                    <div
-                                      onPointerDown={(e) => handleDragHandlePointerDown(e, item.id)}
-                                      onPointerMove={handleDragHandlePointerMove}
-                                      onPointerUp={handleDragHandlePointerUp}
-                                      onPointerCancel={handleDragHandlePointerUp}
-                                      className="-my-1.5 -ml-1.5 p-1.5 flex-shrink-0 text-slate-400 select-none touch-none cursor-grab active:cursor-grabbing"
-                                    >
-                                      ⠿
-                                    </div>
-                                  )}
-                                  {selectionMode && (
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); toggleSelectItem(item.id); }}
-                                      className="flex-shrink-0"
-                                    >
-                                      {selectedIds.includes(item.id) ? (
-                                        <CheckCircle2 className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
-                                      ) : (
-                                        <Circle className="w-4 h-4 text-slate-300" strokeWidth={1.5} />
-                                      )}
-                                    </button>
-                                  )}
-                                  {!selectionMode && (
-                                    <ChevronDown
-                                      className={`w-3.5 h-3.5 text-slate-300 transition-transform flex-shrink-0 ${isExpanded ? '' : '-rotate-90'}`}
-                                      strokeWidth={1.5}
-                                    />
-                                  )}
-                                  <h3 className={`flex-1 text-sm font-light ${
-                                    item.failed ? 'text-slate-400 line-through' : item.completed ? 'text-green-700 line-through' : 'text-slate-900'
-                                  }`}>{item.name}</h3>
-                                  <span className="text-xs text-slate-400 flex-shrink-0">Lv. {Math.floor((item.points || 0) / 3)}</span>
-                                  {!selectionMode && (
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
-                                      className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex-shrink-0"
-                                    >
-                                      <Trash2 className="w-3 h-3" strokeWidth={1.5} />
-                                    </button>
-                                  )}
-                                </div>
+                                {reorderMode && (
+                                  <div
+                                    onPointerDown={(e) => handleDragHandlePointerDown(e, item.id)}
+                                    onPointerMove={handleDragHandlePointerMove}
+                                    onPointerUp={handleDragHandlePointerUp}
+                                    onPointerCancel={handleDragHandlePointerUp}
+                                    className="mt-0.5 -my-1.5 -ml-1.5 p-1.5 flex-shrink-0 text-slate-400 select-none touch-none cursor-grab active:cursor-grabbing"
+                                  >
+                                    ⠿
+                                  </div>
+                                )}
+                                {selectionMode && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); toggleSelectItem(item.id); }}
+                                    className="mt-0.5 flex-shrink-0"
+                                  >
+                                    {selectedIds.includes(item.id) ? (
+                                      <CheckCircle2 className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+                                    ) : (
+                                      <Circle className="w-4 h-4 text-slate-300" strokeWidth={1.5} />
+                                    )}
+                                  </button>
+                                )}
 
-                                {isExpanded && !selectionMode && (
-                                  <div className="pl-5 pb-3 space-y-2">
+                                <div className="flex-1">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <h3 className={`text-sm font-light ${
+                                      item.failed ? 'text-slate-400 line-through' : item.completed ? 'text-green-700 line-through' : 'text-slate-900'
+                                    }`}>{item.name}</h3>
+                                    {!selectionMode && (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
+                                          className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                                        >
+                                          <Trash2 className="w-3 h-3" strokeWidth={1.5} />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="space-y-2">
                                     <div className="flex justify-between items-center">
                                       <span className="text-xs text-slate-400">Level</span>
                                       <span className="text-sm font-light text-blue-600">{Math.floor((item.points || 0) / 3)}</span>
@@ -1147,10 +1136,9 @@ export default function YuYuApp() {
                                     </div>
                                     <p className="text-xs text-slate-400 text-right">{item.points || 0} Teilpunkte</p>
                                   </div>
-                                )}
+                                </div>
                               </div>
-                              );
-                            })}
+                            ))}
                           </div>
                           )}
                         </div>
