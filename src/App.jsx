@@ -7,14 +7,66 @@ const HEART_LOSS_PER_FAIL = 0.25;
 // Die vier Lebensbereiche sind fest vorgegeben, keine frei anlegbaren Einträge
 const FIXED_LIFE_AREAS = ['Persönlich', 'Familie & Freunde', 'Arbeit', 'Gemeinde'];
 const LIFE_AREA_XP_PER_COMPLETION = 10;
-// Herz-Pfad in einem 100x100-Viewbox, unterteilt in vier Viertel (siehe LIFE_AREA_QUADRANTS)
-const HEART_PATH = 'M50,30 A20,20 0 0 1 90,30 Q90,60 50,90 Q10,60 10,30 A20,20 0 0 1 50,30 Z';
+// Pixeliges 8-Bit-Herz: Rastergröße füllen, indem pro Zelle die klassische Herz-Formel
+// (x²+y²-1)³ - x²y³ <= 0 ausgewertet wird - ergibt automatisch die gestufte Pixel-Silhouette.
+const PIXEL_HEART_COLS = 20;
+const PIXEL_HEART_ROWS = 18;
+const PIXEL_HEART_CELL = 10;
+const buildPixelHeartGrid = (cols, rows) => {
+  const xMin = -1.15, xMax = 1.15, yTop = 1.22, yBottom = -0.95;
+  const grid = [];
+  for (let row = 0; row < rows; row++) {
+    const line = [];
+    for (let col = 0; col < cols; col++) {
+      const x = xMin + ((col + 0.5) / cols) * (xMax - xMin);
+      const y = yTop - ((row + 0.5) / rows) * (yTop - yBottom);
+      const value = Math.pow(x * x + y * y - 1, 3) - x * x * y * y * y;
+      line.push(value <= 0 ? 1 : 0);
+    }
+    grid.push(line);
+  }
+  return grid;
+};
+const PIXEL_HEART_GRID = buildPixelHeartGrid(PIXEL_HEART_COLS, PIXEL_HEART_ROWS);
+const PIXEL_HEART_COL_DIVIDER = Math.floor(PIXEL_HEART_COLS / 2);
+const PIXEL_HEART_ROW_DIVIDER = Math.floor(PIXEL_HEART_ROWS / 2) - 1;
+const PIXEL_HEART_QUADRANT_BOUNDS = {
+  tl: { colStart: 0, colEnd: PIXEL_HEART_COL_DIVIDER - 1, rowStart: 0, rowEnd: PIXEL_HEART_ROW_DIVIDER - 1 },
+  tr: { colStart: PIXEL_HEART_COL_DIVIDER + 1, colEnd: PIXEL_HEART_COLS - 1, rowStart: 0, rowEnd: PIXEL_HEART_ROW_DIVIDER - 1 },
+  bl: { colStart: 0, colEnd: PIXEL_HEART_COL_DIVIDER - 1, rowStart: PIXEL_HEART_ROW_DIVIDER + 1, rowEnd: PIXEL_HEART_ROWS - 1 },
+  br: { colStart: PIXEL_HEART_COL_DIVIDER + 1, colEnd: PIXEL_HEART_COLS - 1, rowStart: PIXEL_HEART_ROW_DIVIDER + 1, rowEnd: PIXEL_HEART_ROWS - 1 },
+};
+// Label-Anker je Viertel: die Zeile mit der größten gefüllten Breite innerhalb des Viertels
+// verwenden (nicht die vertikale Mitte der rechteckigen Vierteljustierung) - untere Viertel
+// laufen spitz zu, eine reine Mittelwert-Zentrierung würde z.B. "Gemeinde" abschneiden.
+const computeFilledCenter = (bounds) => {
+  let bestRow = bounds.rowStart, bestWidth = -1, bestMinCol = bounds.colStart, bestMaxCol = bounds.colEnd;
+  for (let row = bounds.rowStart; row <= bounds.rowEnd; row++) {
+    let minCol = Infinity, maxCol = -Infinity;
+    for (let col = bounds.colStart; col <= bounds.colEnd; col++) {
+      if (PIXEL_HEART_GRID[row][col]) {
+        if (col < minCol) minCol = col;
+        if (col > maxCol) maxCol = col;
+      }
+    }
+    if (maxCol >= minCol && maxCol - minCol > bestWidth) {
+      bestWidth = maxCol - minCol;
+      bestRow = row;
+      bestMinCol = minCol;
+      bestMaxCol = maxCol;
+    }
+  }
+  return {
+    x: ((bestMinCol + bestMaxCol + 1) / 2) * PIXEL_HEART_CELL,
+    y: (bestRow + 0.5) * PIXEL_HEART_CELL,
+  };
+};
 const LIFE_AREA_QUADRANTS = [
-  { name: 'Persönlich', lines: ['Persönlich'], x: 10, y: 10 },
-  { name: 'Familie & Freunde', lines: ['Familie &', 'Freunde'], x: 50, y: 10 },
-  { name: 'Arbeit', lines: ['Arbeit'], x: 10, y: 50 },
-  { name: 'Gemeinde', lines: ['Gemeinde'], x: 50, y: 50 },
-];
+  { name: 'Persönlich', lines: ['Persönlich'], quadrant: 'tl' },
+  { name: 'Familie & Freunde', lines: ['Familie &', 'Freunde'], quadrant: 'tr' },
+  { name: 'Arbeit', lines: ['Arbeit'], quadrant: 'bl' },
+  { name: 'Gemeinde', lines: ['Gemeinde'], quadrant: 'br' },
+].map(q => ({ ...q, ...computeFilledCenter(PIXEL_HEART_QUADRANT_BOUNDS[q.quadrant]) }));
 
 const loadJSON = (key, fallback) => {
   try {
@@ -1753,7 +1805,90 @@ export default function YuYuApp() {
   // klickbar für eine Pop-up-Detailseite. Jeder Bereich sammelt XP durch abgeschlossene
   // Ziele/Aufgaben, die ihm zugeordnet sind (siehe gainLifeAreaXP).
   if (section === 'life-areas') {
-    const popupArea = allLifeAreaItems.find(a => a.id === selectedLifeAreaId);
+    // Eigene Detailseite eines Lebensbereichs statt Pop-up-Overlay
+    const openArea = allLifeAreaItems.find(a => a.id === selectedLifeAreaId);
+    if (openArea) {
+      const linkedGoals = items.filter(i => i.type === 'goals' && i.lifeAreaId === openArea.id);
+      const linkedTodos = todos.filter(t => t.lifeAreaId === openArea.id);
+      const pct = Math.min(100, ((openArea.experience || 0) / (openArea.maxExperience || 100)) * 100);
+      return (
+        <div className="min-h-screen bg-white p-4 sm:p-8">
+          <div className="max-w-2xl mx-auto">
+            <div className="flex items-start gap-3 sm:gap-6 mb-6 pb-4 sm:mb-12 sm:pb-8 border-b border-slate-200">
+              <button
+                onClick={() => setSelectedLifeAreaId(null)}
+                className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
+              >
+                <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
+              </button>
+              <div>
+                <h1 className="text-2xl sm:text-4xl font-light text-slate-900 tracking-tight">{openArea.name}</h1>
+                <p className="text-sm text-slate-400 font-light mt-1">Lebensbereich</p>
+              </div>
+            </div>
+
+            <div className="max-w-sm mb-8">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-xs text-slate-400">Level {openArea.level || 0}</span>
+                <span className="text-xs text-slate-400">{openArea.experience || 0}/{openArea.maxExperience || 100} XP</span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-rose-400 to-rose-600 transition-all"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+
+            {(linkedGoals.length > 0 || linkedTodos.length > 0) ? (
+              <div className="max-w-md space-y-4">
+                {linkedGoals.length > 0 && (
+                  <div>
+                    <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Ziele</p>
+                    <div className="space-y-1">
+                      {linkedGoals.map(g => (
+                        <p
+                          key={g.id}
+                          className={`text-sm font-light ${
+                            g.completed ? 'text-green-700 line-through' : g.failed ? 'text-slate-400 line-through' : 'text-slate-900'
+                          }`}
+                        >
+                          {g.name}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {linkedTodos.length > 0 && (
+                  <div>
+                    <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Aufgaben</p>
+                    <div className="space-y-1">
+                      {linkedTodos.map(t => (
+                        <p
+                          key={t.id}
+                          className={`text-sm font-light ${
+                            t.completed ? 'text-green-700 line-through' : t.failed ? 'text-slate-400 line-through' : 'text-slate-900'
+                          }`}
+                        >
+                          {t.text}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 font-light max-w-md">Noch keine verknüpften Ziele oder Aufgaben.</p>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Pixeliges Herz, komplett weinrot, transparenter Hintergrund - vier Viertel, je eins pro
+    // Lebensbereich; Klick auf ein Viertel führt zu dessen eigener Seite oben.
+    const heartWidth = PIXEL_HEART_COLS * PIXEL_HEART_CELL;
+    const heartHeight = PIXEL_HEART_ROWS * PIXEL_HEART_CELL;
 
     return (
       <div className="min-h-screen bg-white p-4 sm:p-8">
@@ -1772,56 +1907,57 @@ export default function YuYuApp() {
           </div>
 
           <div className="flex justify-center">
-            <svg viewBox="0 0 100 100" className="w-[min(80vw,360px)] h-[min(80vw,360px)]">
-              <defs>
-                <clipPath id="heart-clip">
-                  <path d={HEART_PATH} />
-                </clipPath>
-              </defs>
-              <g clipPath="url(#heart-clip)">
-                {LIFE_AREA_QUADRANTS.map((q) => {
-                  const area = allLifeAreaItems.find(a => a.name === q.name);
-                  const pct = area ? Math.min(100, ((area.experience || 0) / (area.maxExperience || 100)) * 100) : 0;
-                  const fillHeight = 40 * (pct / 100);
+            <svg viewBox={`0 0 ${heartWidth} ${heartHeight}`} className="w-[min(80vw,360px)] h-auto">
+              {PIXEL_HEART_GRID.map((line, row) =>
+                line.map((cell, col) => {
+                  if (!cell) return null;
+                  const isDivider = col === PIXEL_HEART_COL_DIVIDER || row === PIXEL_HEART_ROW_DIVIDER;
                   return (
-                    <g key={q.name}>
-                      <rect x={q.x} y={q.y} width="40" height="40" fill="#ffe4e6" />
-                      <rect
-                        x={q.x}
-                        y={q.y + (40 - fillHeight)}
-                        width="40"
-                        height={fillHeight}
-                        fill="#fb7185"
-                        className="transition-all"
-                      />
-                    </g>
+                    <rect
+                      key={`${row}-${col}`}
+                      x={col * PIXEL_HEART_CELL}
+                      y={row * PIXEL_HEART_CELL}
+                      width={PIXEL_HEART_CELL}
+                      height={PIXEL_HEART_CELL}
+                      fill={isDivider ? '#ffffff' : '#6d1a35'}
+                    />
                   );
-                })}
-                <line x1="50" y1="8" x2="50" y2="92" stroke="#ffffff" strokeWidth="1" />
-                <line x1="8" y1="50" x2="92" y2="50" stroke="#ffffff" strokeWidth="1" />
-              </g>
-              <path d={HEART_PATH} fill="none" stroke="#e11d48" strokeWidth="1.5" />
+                })
+              )}
               {LIFE_AREA_QUADRANTS.map((q) => {
+                const b = PIXEL_HEART_QUADRANT_BOUNDS[q.quadrant];
                 const area = allLifeAreaItems.find(a => a.name === q.name);
+                const hitX = b.colStart * PIXEL_HEART_CELL;
+                const hitY = b.rowStart * PIXEL_HEART_CELL;
+                const hitW = (b.colEnd - b.colStart + 1) * PIXEL_HEART_CELL;
+                const hitH = (b.rowEnd - b.rowStart + 1) * PIXEL_HEART_CELL;
                 return (
                   <g
-                    key={`hit-${q.name}`}
+                    key={q.name}
                     onClick={() => area && setSelectedLifeAreaId(area.id)}
                     className="cursor-pointer"
                   >
-                    <rect x={q.x} y={q.y} width="40" height="40" fill="transparent" />
-                    <text textAnchor="middle" fontSize="6" fontWeight="500" fill="#881337" fontFamily="'Lora', serif">
+                    <rect x={hitX} y={hitY} width={hitW} height={hitH} fill="transparent" />
+                    <text
+                      textAnchor="middle"
+                      fontSize="9"
+                      fontWeight="600"
+                      fill="#ffffff"
+                      fontFamily="'Lora', serif"
+                      pointerEvents="none"
+                    >
                       {q.lines.map((line, li) => (
-                        <tspan key={li} x={q.x + 20} y={q.y + 15 + li * 7}>{line}</tspan>
+                        <tspan key={li} x={q.x} y={q.y + 8 + li * 11}>{line}</tspan>
                       ))}
                     </text>
                     <text
-                      x={q.x + 20}
-                      y={q.y + 15 + q.lines.length * 7 + 4}
+                      x={q.x}
+                      y={q.y + 8 + q.lines.length * 11}
                       textAnchor="middle"
-                      fontSize="5"
-                      fill="#881337"
-                      opacity="0.7"
+                      fontSize="7"
+                      fill="#ffffff"
+                      opacity="0.85"
+                      pointerEvents="none"
                     >
                       Lv. {area?.level || 0}
                     </text>
@@ -1830,87 +1966,6 @@ export default function YuYuApp() {
               })}
             </svg>
           </div>
-
-          {popupArea && (() => {
-            const linkedGoals = items.filter(i => i.type === 'goals' && i.lifeAreaId === popupArea.id);
-            const linkedTodos = todos.filter(t => t.lifeAreaId === popupArea.id);
-            const pct = Math.min(100, ((popupArea.experience || 0) / (popupArea.maxExperience || 100)) * 100);
-            return (
-              <div
-                className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-                onClick={() => setSelectedLifeAreaId(null)}
-              >
-                <div
-                  className="bg-white rounded-xl max-w-sm w-full p-6 max-h-[80vh] overflow-y-auto"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <h2 className="text-xl font-light text-slate-900">{popupArea.name}</h2>
-                    <button
-                      onClick={() => setSelectedLifeAreaId(null)}
-                      className="p-1.5 -m-1.5 text-slate-300 hover:text-slate-600 transition"
-                    >
-                      <X className="w-4 h-4" strokeWidth={1.5} />
-                    </button>
-                  </div>
-
-                  <div className="mb-6">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs text-slate-400">Level {popupArea.level || 0}</span>
-                      <span className="text-xs text-slate-400">{popupArea.experience || 0}/{popupArea.maxExperience || 100} XP</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-rose-400 to-rose-600 transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {(linkedGoals.length > 0 || linkedTodos.length > 0) ? (
-                    <div className="space-y-3">
-                      {linkedGoals.length > 0 && (
-                        <div>
-                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Ziele</p>
-                          <div className="space-y-1">
-                            {linkedGoals.map(g => (
-                              <p
-                                key={g.id}
-                                className={`text-sm font-light ${
-                                  g.completed ? 'text-green-700 line-through' : g.failed ? 'text-slate-400 line-through' : 'text-slate-900'
-                                }`}
-                              >
-                                {g.name}
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {linkedTodos.length > 0 && (
-                        <div>
-                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Aufgaben</p>
-                          <div className="space-y-1">
-                            {linkedTodos.map(t => (
-                              <p
-                                key={t.id}
-                                className={`text-sm font-light ${
-                                  t.completed ? 'text-green-700 line-through' : t.failed ? 'text-slate-400 line-through' : 'text-slate-900'
-                                }`}
-                              >
-                                {t.text}
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-slate-400 font-light">Noch keine verknüpften Ziele oder Aufgaben.</p>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
         </div>
       </div>
     );
