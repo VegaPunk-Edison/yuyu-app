@@ -881,7 +881,15 @@ export default function YuYuApp() {
                   return (
                     <div key={openGroup.id} className="max-w-md mx-auto mt-6 border border-blue-200 rounded-lg overflow-hidden">
                       <div className="px-4 pb-6 pt-4">
-                        <h3 className="text-sm text-slate-900 font-medium mb-4">{openGroup.name}</h3>
+                        <div className="flex items-center justify-between gap-2 mb-4">
+                          <h3 className="text-sm text-slate-900 font-medium">{openGroup.name}</h3>
+                          <button
+                            onClick={() => setSelectedVirtueGroup(null)}
+                            className="p-1.5 -m-1.5 text-slate-300 hover:text-slate-600 transition flex-shrink-0"
+                          >
+                            <X className="w-4 h-4" strokeWidth={1.5} />
+                          </button>
+                        </div>
 
                         {/* Add Tugend - nur innerhalb der offenen Oberkategorie möglich */}
                         <div className="mb-8 max-w-sm">
