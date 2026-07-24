@@ -7,6 +7,8 @@ const HEART_LOSS_PER_FAIL = 0.25;
 // Die vier Lebensbereiche sind fest vorgegeben, keine frei anlegbaren Einträge
 const FIXED_LIFE_AREAS = ['Persönlich', 'Familie & Freunde', 'Arbeit', 'Gemeinde'];
 const LIFE_AREA_XP_PER_COMPLETION = 10;
+// Fähigkeiten laufen mit dem gleichen Level-System wie Lebensbereiche (level/experience/maxExperience)
+const SKILL_XP_PER_COMPLETION = 10;
 // Pixeliges 8-Bit-Herz: Rastergröße füllen, indem pro Zelle die klassische Herz-Formel
 // (x²+y²-1)³ - x²y³ <= 0 ausgewertet wird - ergibt automatisch die gestufte Pixel-Silhouette.
 const PIXEL_HEART_COLS = 20;
@@ -84,13 +86,14 @@ const GOAL_TITLE_MAX_LENGTH = 60;
 // -> Titel (Pflicht, zeichenbegrenzt) -> gewünschtes Ergebnis (Pflicht) -> Tugend(en, mehrfach
 // möglich, optional). Jede Antwort wird oben als Zusammenfassung angezeigt; am Ende bestätigt
 // ein "Speichern"-Klick oder leeres Enter auf der letzten Stufe das Ziel auf einmal.
-function GoalForm({ virtues, lifeAreas, onSubmit }) {
+function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
   const [stage, setStage] = useState('lifearea');
   const [value, setValue] = useState('');
   const [lifeArea, setLifeArea] = useState(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [linkedIds, setLinkedIds] = useState([]);
+  const [linkedSkillIds, setLinkedSkillIds] = useState([]);
   const inputRef = useRef(null);
 
   // Fokus wandert mit, damit man ohne erneutes Antippen weiterschreiben kann
@@ -106,12 +109,23 @@ function GoalForm({ virtues, lifeAreas, onSubmit }) {
     ? virtues.filter(v => v.name.toLowerCase().includes(value.toLowerCase()) && !linkedIds.includes(v.id)).slice(0, 5)
     : [];
 
+  const skillSuggestions = stage === 'skill' && value
+    ? skills.filter(s => s.name.toLowerCase().includes(value.toLowerCase()) && !linkedSkillIds.includes(s.id)).slice(0, 5)
+    : [];
+
   const addVirtue = (virtue) => {
     setLinkedIds(prev => (prev.includes(virtue.id) ? prev : [...prev, virtue.id]));
     setValue('');
   };
 
   const removeVirtue = (id) => setLinkedIds(prev => prev.filter(i => i !== id));
+
+  const addSkill = (skill) => {
+    setLinkedSkillIds(prev => (prev.includes(skill.id) ? prev : [...prev, skill.id]));
+    setValue('');
+  };
+
+  const removeSkill = (id) => setLinkedSkillIds(prev => prev.filter(i => i !== id));
 
   const reset = () => {
     setStage('lifearea');
@@ -120,11 +134,12 @@ function GoalForm({ virtues, lifeAreas, onSubmit }) {
     setTitle('');
     setDescription('');
     setLinkedIds([]);
+    setLinkedSkillIds([]);
   };
 
   const save = () => {
     if (!title.trim() || !description.trim()) return;
-    onSubmit({ lifeAreaId: lifeArea?.id || null, title, description, linkedIds });
+    onSubmit({ lifeAreaId: lifeArea?.id || null, title, description, linkedIds, linkedSkillIds });
     reset();
   };
 
@@ -147,6 +162,11 @@ function GoalForm({ virtues, lifeAreas, onSubmit }) {
       setValue(description);
       setDescription('');
       setStage('outcome');
+      return;
+    }
+    if (stage === 'skill') {
+      setValue('');
+      setStage('virtue');
     }
   };
 
@@ -186,14 +206,29 @@ function GoalForm({ virtues, lifeAreas, onSubmit }) {
       return;
     }
 
-    // stage === 'virtue'
-    if (virtueSuggestions.length > 0) {
-      addVirtue(virtueSuggestions[0]);
+    if (stage === 'virtue') {
+      if (virtueSuggestions.length > 0) {
+        addVirtue(virtueSuggestions[0]);
+        return;
+      }
+      const match = virtues.find(v => v.name.toLowerCase() === value.trim().toLowerCase());
+      if (match) {
+        addVirtue(match);
+        return;
+      }
+      setValue('');
+      setStage('skill');
       return;
     }
-    const match = virtues.find(v => v.name.toLowerCase() === value.trim().toLowerCase());
+
+    // stage === 'skill'
+    if (skillSuggestions.length > 0) {
+      addSkill(skillSuggestions[0]);
+      return;
+    }
+    const match = skills.find(s => s.name.toLowerCase() === value.trim().toLowerCase());
     if (match) {
-      addVirtue(match);
+      addSkill(match);
       return;
     }
     save();
@@ -204,6 +239,7 @@ function GoalForm({ virtues, lifeAreas, onSubmit }) {
     title: 'Was ist das Ziel?',
     outcome: 'Gewünschtes Ergebnis - wie sieht es aus, wenn du es erreicht hast?',
     virtue: 'Tugend eingeben (mehrere möglich), Enter zum Bestätigen',
+    skill: 'Fähigkeit eingeben (mehrere möglich), Enter zum Bestätigen',
   };
 
   return (
@@ -215,15 +251,27 @@ function GoalForm({ virtues, lifeAreas, onSubmit }) {
           {description && <p className="text-xs text-slate-500 font-light">{description}</p>}
         </div>
       )}
-      {linkedIds.length > 0 && (
+      {(linkedIds.length > 0 || linkedSkillIds.length > 0) && (
         <div className="flex flex-wrap gap-1.5 mb-2">
           {linkedIds.map(id => {
             const v = virtues.find(vv => vv.id === id);
             if (!v) return null;
             return (
-              <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
+              <span key={`virtue-${id}`} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
                 {v.name}
                 <button type="button" onClick={() => removeVirtue(id)} className="hover:text-blue-900">
+                  <X className="w-3 h-3" strokeWidth={2} />
+                </button>
+              </span>
+            );
+          })}
+          {linkedSkillIds.map(id => {
+            const s = skills.find(ss => ss.id === id);
+            if (!s) return null;
+            return (
+              <span key={`skill-${id}`} className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-50 text-violet-700 text-xs rounded-full">
+                {s.name}
+                <button type="button" onClick={() => removeSkill(id)} className="hover:text-violet-900">
                   <X className="w-3 h-3" strokeWidth={2} />
                 </button>
               </span>
@@ -293,6 +341,20 @@ function GoalForm({ virtues, lifeAreas, onSubmit }) {
             ))}
           </div>
         )}
+        {stage === 'skill' && skillSuggestions.length > 0 && (
+          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+            {skillSuggestions.map(s => (
+              <button
+                key={s.id}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); addSkill(s); }}
+                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {stage === 'title' && <p className="text-[10px] text-slate-400 font-light mt-1 text-right">{value.length}/{GOAL_TITLE_MAX_LENGTH}</p>}
@@ -306,7 +368,7 @@ function GoalForm({ virtues, lifeAreas, onSubmit }) {
             ← Zurück
           </button>
         )}
-        {stage === 'virtue' && (
+        {stage === 'skill' && (
           <button
             onClick={save}
             className="text-sm text-blue-600 hover:text-blue-700 font-light transition"
@@ -413,11 +475,12 @@ function GoalMilestones({ goal, onAdd, onToggle, onDelete }) {
 // Aufgabe anlegen: ein einziges Textfeld wandert per Enter durch die Stufen
 // Aufgabe -> Tugend(en, mehrfach möglich) -> Gewohnheit -> Lebensbereich.
 // Leeres Enter überspringt die aktuelle (optionale) Stufe.
-function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className, wrapperClassName }) {
+function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, className, wrapperClassName }) {
   const [stage, setStage] = useState('task');
   const [value, setValue] = useState('');
   const [taskText, setTaskText] = useState('');
   const [linkedIds, setLinkedIds] = useState([]);
+  const [linkedSkillIds, setLinkedSkillIds] = useState([]);
   const [habit, setHabit] = useState('');
   const inputRef = useRef(null);
 
@@ -428,6 +491,10 @@ function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className,
 
   const suggestions = stage === 'virtue' && value
     ? virtues.filter(v => v.name.toLowerCase().includes(value.toLowerCase()) && !linkedIds.includes(v.id)).slice(0, 5)
+    : [];
+
+  const skillSuggestions = stage === 'skill' && value
+    ? skills.filter(s => s.name.toLowerCase().includes(value.toLowerCase()) && !linkedSkillIds.includes(s.id)).slice(0, 5)
     : [];
 
   const lifeAreaSuggestions = stage === 'lifearea' && value
@@ -441,11 +508,19 @@ function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className,
 
   const removeVirtue = (id) => setLinkedIds(prev => prev.filter(i => i !== id));
 
+  const addSkill = (skill) => {
+    setLinkedSkillIds(prev => (prev.includes(skill.id) ? prev : [...prev, skill.id]));
+    setValue('');
+  };
+
+  const removeSkill = (id) => setLinkedSkillIds(prev => prev.filter(i => i !== id));
+
   const reset = () => {
     setStage('task');
     setValue('');
     setTaskText('');
     setLinkedIds([]);
+    setLinkedSkillIds([]);
     setHabit('');
   };
 
@@ -458,9 +533,14 @@ function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className,
       setStage('task');
       return;
     }
-    if (stage === 'habit') {
+    if (stage === 'skill') {
       setValue('');
       setStage('virtue');
+      return;
+    }
+    if (stage === 'habit') {
+      setValue('');
+      setStage('skill');
       return;
     }
     if (stage === 'lifearea') {
@@ -499,6 +579,21 @@ function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className,
         return;
       }
       setValue('');
+      setStage('skill');
+      return;
+    }
+
+    if (stage === 'skill') {
+      if (skillSuggestions.length > 0) {
+        addSkill(skillSuggestions[0]);
+        return;
+      }
+      const match = skills.find(s => s.name.toLowerCase() === value.trim().toLowerCase());
+      if (match) {
+        addSkill(match);
+        return;
+      }
+      setValue('');
       setStage('habit');
       return;
     }
@@ -514,13 +609,14 @@ function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className,
     const match = lifeAreaSuggestions.length > 0
       ? lifeAreaSuggestions[0]
       : lifeAreas.find(a => a.name.toLowerCase() === value.trim().toLowerCase());
-    onSubmit({ text: taskText, linkedIds, habit, lifeAreaId: match?.id || null });
+    onSubmit({ text: taskText, linkedIds, linkedSkillIds, habit, lifeAreaId: match?.id || null });
     reset();
   };
 
   const placeholders = {
     task: placeholder || '+ Aufgabe hinzufügen',
     virtue: 'Tugend eingeben (mehrere möglich), Enter zum Bestätigen',
+    skill: 'Fähigkeit eingeben (mehrere möglich), Enter zum Bestätigen',
     habit: 'Gewohnheit angeben (optional), Enter für weiter',
     lifearea: 'Lebensbereich angeben (optional), Enter zum Abschließen',
   };
@@ -532,15 +628,27 @@ function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className,
           Aufgabe: <span className="text-slate-600">{taskText}</span>
         </p>
       )}
-      {linkedIds.length > 0 && (
+      {(linkedIds.length > 0 || linkedSkillIds.length > 0) && (
         <div className="flex flex-wrap gap-1.5 mb-1.5">
           {linkedIds.map(id => {
             const v = virtues.find(vv => vv.id === id);
             if (!v) return null;
             return (
-              <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
+              <span key={`virtue-${id}`} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
                 {v.name}
                 <button type="button" onClick={() => removeVirtue(id)} className="hover:text-blue-900">
+                  <X className="w-3 h-3" strokeWidth={2} />
+                </button>
+              </span>
+            );
+          })}
+          {linkedSkillIds.map(id => {
+            const s = skills.find(ss => ss.id === id);
+            if (!s) return null;
+            return (
+              <span key={`skill-${id}`} className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-50 text-violet-700 text-xs rounded-full">
+                {s.name}
+                <button type="button" onClick={() => removeSkill(id)} className="hover:text-violet-900">
                   <X className="w-3 h-3" strokeWidth={2} />
                 </button>
               </span>
@@ -572,6 +680,20 @@ function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className,
             ))}
           </div>
         )}
+        {stage === 'skill' && skillSuggestions.length > 0 && (
+          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+            {skillSuggestions.map(s => (
+              <button
+                key={s.id}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); addSkill(s); }}
+                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+        )}
         {stage === 'lifearea' && lifeAreaSuggestions.length > 0 && (
           <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
             {lifeAreaSuggestions.map(a => (
@@ -580,7 +702,7 @@ function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className,
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  onSubmit({ text: taskText, linkedIds, habit, lifeAreaId: a.id });
+                  onSubmit({ text: taskText, linkedIds, linkedSkillIds, habit, lifeAreaId: a.id });
                   reset();
                 }}
                 className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
@@ -741,6 +863,7 @@ export default function YuYuApp() {
       newItem.maxExperience = 100;
       if (section === 'goals') {
         newItem.linkedItems = linkedVirtues;
+        newItem.linkedSkillIds = extra.linkedSkillIds || [];
         newItem.lifeAreaId = extra.lifeAreaId || null;
         newItem.description = (extra.description || '').trim();
         newItem.milestones = [];
@@ -824,6 +947,7 @@ export default function YuYuApp() {
       completed: false,
       failed: false,
       linkedItems: linkedVirtues,
+      linkedSkillIds: extra.linkedSkillIds || [],
       habit: (extra.habit || '').trim(),
       lifeAreaId: extra.lifeAreaId || null,
       createdAt: new Date().toISOString(),
@@ -838,6 +962,7 @@ export default function YuYuApp() {
     gainVirtuePoint(todo.linkedItems || []);
     gainHeart(`Aufgabe erledigt: "${todo.text}"`);
     gainLifeAreaXP(todo.lifeAreaId);
+    gainSkillXP(todo.linkedSkillIds || []);
   };
 
   // Aufgabe als gescheitert markieren: kostet ein Viertel-Herz
@@ -875,6 +1000,22 @@ export default function YuYuApp() {
     }));
   };
 
+  // Fähigkeiten sammeln XP durch verknüpfte Ziele/Aufgaben - gleiches Level-System wie Lebensbereiche
+  const gainSkillXP = (skillIds) => {
+    if (!skillIds || skillIds.length === 0) return;
+    setItems(prev => prev.map(i => {
+      if (!skillIds.includes(i.id)) return i;
+      const maxExperience = i.maxExperience || 100;
+      let experience = (i.experience || 0) + SKILL_XP_PER_COMPLETION;
+      let level = i.level || 0;
+      while (experience >= maxExperience) {
+        experience -= maxExperience;
+        level += 1;
+      }
+      return { ...i, experience, level };
+    }));
+  };
+
   const deleteItem = (id) => {
     setItems(items.filter(i => i.id !== id));
   };
@@ -894,6 +1035,7 @@ export default function YuYuApp() {
     setItems(prev => prev.map(i => (i.id === id ? { ...i, completed: true } : i)));
     gainVirtuePoint(item.linkedItems || []);
     gainLifeAreaXP(item.lifeAreaId);
+    gainSkillXP(item.linkedSkillIds || []);
   };
 
   const toggleSelectItem = (id) => {
@@ -972,6 +1114,7 @@ export default function YuYuApp() {
   const sectionItems = items.filter(itemInScope);
   const allVirtueItems = items.filter(i => i.type === 'principles');
   const allLifeAreaItems = items.filter(i => i.type === 'life-areas');
+  const allSkillItems = items.filter(i => i.type === 'skills');
 
   // Text in mehrere Zeilen umbrechen, damit er ins Puzzleteil passt
   const wrapPuzzleText = (name, maxCharsPerLine = 11) => {
@@ -1321,8 +1464,11 @@ export default function YuYuApp() {
               <TodoWizardInput
                 placeholder="+ Aufgabe hinzufügen"
                 virtues={allVirtueItems}
+                skills={allSkillItems}
                 lifeAreas={allLifeAreaItems}
-                onSubmit={({ text, linkedIds, habit, lifeAreaId }) => addTodo(text, linkedIds, { habit, lifeAreaId })}
+                onSubmit={({ text, linkedIds, linkedSkillIds, habit, lifeAreaId }) =>
+                  addTodo(text, linkedIds, { linkedSkillIds, habit, lifeAreaId })
+                }
                 wrapperClassName="flex-1 min-w-0"
                 className="w-full text-base sm:text-sm font-light text-slate-400 placeholder-slate-300 outline-none focus:text-slate-900"
               />
@@ -1337,8 +1483,9 @@ export default function YuYuApp() {
               <>
                 {openTodos.map(todo => {
                   const todoVirtues = (todo.linkedItems || []).map(vid => allVirtueItems.find(v => v.id === vid)).filter(Boolean);
+                  const todoSkills = (todo.linkedSkillIds || []).map(sid => allSkillItems.find(s => s.id === sid)).filter(Boolean);
                   const todoLifeArea = allLifeAreaItems.find(a => a.id === todo.lifeAreaId);
-                  const hasExtras = todo.habit || todoLifeArea || todoVirtues.length > 0;
+                  const hasExtras = todo.habit || todoLifeArea || todoVirtues.length > 0 || todoSkills.length > 0;
                   return (
                   <div key={todo.id} className="flex items-start gap-3 py-1.5 px-1 group/task hover:bg-slate-50 rounded transition">
                     <button
@@ -1359,6 +1506,9 @@ export default function YuYuApp() {
                           )}
                           {todoVirtues.map(v => (
                             <span key={v.id} className="px-1.5 py-0.5 bg-blue-50 text-blue-700 text-[10px] rounded-full">{v.name}</span>
+                          ))}
+                          {todoSkills.map(s => (
+                            <span key={s.id} className="px-1.5 py-0.5 bg-violet-50 text-violet-700 text-[10px] rounded-full">{s.name}</span>
                           ))}
                         </div>
                       )}
@@ -2102,9 +2252,10 @@ export default function YuYuApp() {
           {section === 'goals' ? (
             <GoalForm
               virtues={allVirtueItems}
+              skills={allSkillItems}
               lifeAreas={allLifeAreaItems}
-              onSubmit={({ lifeAreaId, title, description, linkedIds }) =>
-                addItem(title, linkedIds, { lifeAreaId, description })
+              onSubmit={({ lifeAreaId, title, description, linkedIds, linkedSkillIds }) =>
+                addItem(title, linkedIds, { lifeAreaId, description, linkedSkillIds })
               }
             />
           ) : (
@@ -2252,14 +2403,23 @@ export default function YuYuApp() {
                     {section === 'goals' && item.description && (
                       <p className="text-xs text-slate-500 font-light mb-2 whitespace-pre-wrap">{item.description}</p>
                     )}
-                    {section === 'goals' && item.linkedItems?.length > 0 && (
+                    {section === 'goals' && (item.linkedItems?.length > 0 || item.linkedSkillIds?.length > 0) && (
                       <div className="flex flex-wrap gap-1 mb-2">
-                        {item.linkedItems.map(vid => {
+                        {(item.linkedItems || []).map(vid => {
                           const v = allVirtueItems.find(vv => vv.id === vid);
                           if (!v) return null;
                           return (
-                            <span key={vid} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] rounded-full">
+                            <span key={`virtue-${vid}`} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] rounded-full">
                               {v.name}
+                            </span>
+                          );
+                        })}
+                        {(item.linkedSkillIds || []).map(sid => {
+                          const s = allSkillItems.find(ss => ss.id === sid);
+                          if (!s) return null;
+                          return (
+                            <span key={`skill-${sid}`} className="px-2 py-0.5 bg-violet-50 text-violet-700 text-[10px] rounded-full">
+                              {s.name}
                             </span>
                           );
                         })}
