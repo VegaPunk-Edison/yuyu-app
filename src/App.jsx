@@ -154,6 +154,11 @@ export default function YuYuApp() {
   const [editingVirtueGroupId, setEditingVirtueGroupId] = useState(null);
   const [editingVirtueGroupName, setEditingVirtueGroupName] = useState('');
   const [hearts, setHearts] = useState(() => loadJSON('yuyu-hearts', MAX_HEARTS));
+  const [heartLog, setHeartLog] = useState(() => loadJSON('yuyu-heart-log', []));
+  const [penaltyTask, setPenaltyTask] = useState(() => loadJSON('yuyu-penalty-task', ''));
+  const [showHeartLog, setShowHeartLog] = useState(false);
+  const [editingPenaltyTask, setEditingPenaltyTask] = useState(false);
+  const [penaltyTaskDraft, setPenaltyTaskDraft] = useState('');
   const importFileInputRef = useRef(null);
 
   const categories = [
@@ -172,18 +177,27 @@ export default function YuYuApp() {
   // hätte, und würde die gerade geladenen/migrierten Daten wieder mit leeren Arrays überschreiben.
   useEffect(() => {
     saveData();
-  }, [items, todos, virtueGroups, hearts]);
+  }, [items, todos, virtueGroups, hearts, heartLog, penaltyTask]);
+
+  // Bei 0 Herzen ist nur noch der Aufgaben-Bereich zugänglich (Strafaufgabe muss zuerst erledigt werden)
+  useEffect(() => {
+    if (hearts <= 0 && ['principles', 'goals', 'life-areas', 'habits'].includes(section)) {
+      setSection('todos');
+    }
+  }, [hearts, section]);
 
   const saveData = () => {
     localStorage.setItem('yuyu-items', JSON.stringify(items));
     localStorage.setItem('yuyu-todos', JSON.stringify(todos));
     localStorage.setItem('yuyu-virtue-groups', JSON.stringify(virtueGroups));
     localStorage.setItem('yuyu-hearts', JSON.stringify(hearts));
+    localStorage.setItem('yuyu-heart-log', JSON.stringify(heartLog));
+    localStorage.setItem('yuyu-penalty-task', JSON.stringify(penaltyTask));
   };
 
   // Backup: alle Daten als JSON-Datei herunterladen, da nichts außerhalb dieses Browsers gespeichert wird
   const exportData = () => {
-    const data = { items, todos, virtueGroups, hearts, exportedAt: new Date().toISOString() };
+    const data = { items, todos, virtueGroups, hearts, heartLog, penaltyTask, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -203,6 +217,8 @@ export default function YuYuApp() {
         if (Array.isArray(data.todos)) setTodos(data.todos);
         if (Array.isArray(data.virtueGroups)) setVirtueGroups(data.virtueGroups);
         if (typeof data.hearts === 'number') setHearts(data.hearts);
+        if (Array.isArray(data.heartLog)) setHeartLog(data.heartLog);
+        if (typeof data.penaltyTask === 'string') setPenaltyTask(data.penaltyTask);
       } catch (err) {
         window.alert('Datei konnte nicht gelesen werden - ist es eine gültige YuYu-Backup-Datei?');
       }
@@ -263,8 +279,19 @@ export default function YuYuApp() {
     if (editingVirtueGroupId === id) setEditingVirtueGroupId(null);
   };
 
-  const loseHeart = () => {
+  // Merkt sich nur die letzten 3 Herz-Aktionen (Gewinn/Verlust) für die Anzeige an der Herzleiste
+  const logHeartEvent = (type, label) => {
+    setHeartLog(prev => [{ id: Date.now(), type, label, at: new Date().toISOString() }, ...prev].slice(0, 3));
+  };
+
+  const loseHeart = (label) => {
     setHearts(prev => Math.max(0, Math.round((prev - HEART_LOSS_PER_FAIL) * 100) / 100));
+    logHeartEvent('loss', label);
+  };
+
+  const gainHeart = (label) => {
+    setHearts(prev => Math.min(MAX_HEARTS, Math.round((prev + HEART_LOSS_PER_FAIL) * 100) / 100));
+    logHeartEvent('gain', label);
   };
 
   const addTodo = (text, linkedVirtues = []) => {
@@ -279,11 +306,13 @@ export default function YuYuApp() {
     }]);
   };
 
+  // Erledigte Aufgabe gibt ein Viertel-Herz zurück (bis maximal MAX_HEARTS)
   const toggleTodo = (todoId) => {
     const todo = todos.find(t => t.id === todoId);
     if (!todo || todo.completed) return;
     setTodos(todos.map(t => (t.id === todoId ? { ...t, completed: true } : t)));
     gainVirtuePoint(todo.linkedItems || []);
+    gainHeart(`Aufgabe erledigt: "${todo.text}"`);
   };
 
   // Aufgabe als gescheitert markieren: kostet ein Viertel-Herz
@@ -291,7 +320,7 @@ export default function YuYuApp() {
     const todo = todos.find(t => t.id === todoId);
     if (!todo || todo.completed || todo.failed) return;
     setTodos(todos.map(t => (t.id === todoId ? { ...t, failed: true } : t)));
-    loseHeart();
+    loseHeart(`Aufgabe gescheitert: "${todo.text}"`);
   };
 
   // Teilpunkte für Tugenden: jede verknüpfte Tugend bekommt bei Erledigung einen vollen Punkt, 3 Teilpunkte = 1 Level
@@ -314,7 +343,7 @@ export default function YuYuApp() {
     const item = items.find(i => i.id === id);
     if (!item || item.failed || item.completed) return;
     setItems(items.map(i => (i.id === id ? { ...i, failed: true } : i)));
-    loseHeart();
+    loseHeart(`Ziel gescheitert: "${item.name}"`);
   };
 
   // Ziel als erfolgreich abgeschlossen markieren: vergibt Teilpunkte an verknüpfte Tugenden
@@ -510,6 +539,71 @@ export default function YuYuApp() {
     return icons;
   };
 
+  // Aufklappbares Panel unter der Herzleiste: letzte 3 Aktionen + einstellbare Strafaufgabe für 0 Herzen
+  const renderHeartLogPanel = () => (
+    <div className="mt-3 max-w-xs border border-slate-200 rounded-lg p-3 bg-slate-50" onClick={(e) => e.stopPropagation()}>
+      <p className="text-xs text-slate-500 font-light uppercase tracking-wide mb-2">Letzte Aktionen</p>
+      {heartLog.length === 0 ? (
+        <p className="text-xs text-slate-400 font-light mb-3">Noch keine Aktionen</p>
+      ) : (
+        <ul className="space-y-1 mb-3">
+          {heartLog.map(entry => (
+            <li key={entry.id} className="flex items-start gap-1.5 text-xs">
+              <span className={`flex-shrink-0 ${entry.type === 'gain' ? 'text-green-600' : 'text-red-500'}`}>
+                {entry.type === 'gain' ? '+' : '−'}
+              </span>
+              <span className="flex-1 text-slate-600 font-light">{entry.label}</span>
+              <span className="text-slate-400 flex-shrink-0">
+                {new Date(entry.at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="pt-2 border-t border-slate-200">
+        <p className="text-xs text-slate-500 font-light uppercase tracking-wide mb-1">Strafaufgabe bei 0 Herzen</p>
+        {editingPenaltyTask ? (
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              value={penaltyTaskDraft}
+              onChange={(e) => setPenaltyTaskDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setPenaltyTask(penaltyTaskDraft.trim());
+                  setEditingPenaltyTask(false);
+                }
+                if (e.key === 'Escape') setEditingPenaltyTask(false);
+              }}
+              onBlur={() => {
+                setPenaltyTask(penaltyTaskDraft.trim());
+                setEditingPenaltyTask(false);
+              }}
+              placeholder="z.B. 20 Liegestütze"
+              className="flex-1 min-w-0 px-0 py-1 bg-white text-slate-900 border-b border-blue-400 outline-none font-light text-xs"
+            />
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-slate-700 font-light">
+              {penaltyTask ? `"${penaltyTask}"` : 'Noch keine festgelegt'}
+            </p>
+            <button
+              onClick={() => {
+                setEditingPenaltyTask(true);
+                setPenaltyTaskDraft(penaltyTask);
+              }}
+              className="text-xs text-blue-600 hover:text-blue-700 font-light flex-shrink-0"
+            >
+              {penaltyTask ? 'Ändern' : 'Festlegen'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   // HUB VIEW
   if (section === 'hub') {
     return (
@@ -551,17 +645,18 @@ export default function YuYuApp() {
             {/* Segments - hier passiert der Klick */}
             {categories.map((cat) => {
               const outerRadius = 235;
+              const locked = hearts <= 0 && cat.id !== 'todos';
 
               return (
                 <g key={cat.id}>
                   <path
                     d={describeArc(cat.startAngle, cat.endAngle, outerRadius)}
-                    fill="#ffffff"
+                    fill={locked ? '#f1f5f9' : '#ffffff'}
                     stroke="#e5e7eb"
                     strokeWidth="0.5"
-                    className="hover:fill-slate-50 transition-colors cursor-pointer"
-                    onClick={() => setSection(cat.id)}
-                    style={{ opacity: 0.8 }}
+                    className={`transition-colors ${locked ? 'cursor-not-allowed' : 'cursor-pointer hover:fill-slate-50'}`}
+                    onClick={() => { if (locked) return; setSection(cat.id); }}
+                    style={{ opacity: locked ? 0.4 : 0.8 }}
                   />
 
                   <line
@@ -578,9 +673,19 @@ export default function YuYuApp() {
               );
             })}
 
-            {/* Center circle - clickable für Prinzipien */}
-            <circle cx="250" cy="250" r="140" fill="white" stroke="#7c9fd6" strokeWidth="1.5" onClick={() => { setSelectedVirtueGroup(null); setSection('principles'); }} className="cursor-pointer hover:fill-slate-50 transition" />
-            <circle cx="250" cy="250" r="135" fill="#f8fafc" onClick={() => { setSelectedVirtueGroup(null); setSection('principles'); }} className="cursor-pointer hover:fill-slate-50 transition" />
+            {/* Center circle - clickable für Prinzipien, gesperrt bei 0 Herzen */}
+            <circle
+              cx="250" cy="250" r="140"
+              fill="white" stroke="#7c9fd6" strokeWidth="1.5"
+              onClick={() => { if (hearts <= 0) return; setSelectedVirtueGroup(null); setSection('principles'); }}
+              className={`transition ${hearts <= 0 ? 'cursor-not-allowed' : 'cursor-pointer hover:fill-slate-50'}`}
+            />
+            <circle
+              cx="250" cy="250" r="135"
+              fill={hearts <= 0 ? '#e2e8f0' : '#f8fafc'}
+              onClick={() => { if (hearts <= 0) return; setSelectedVirtueGroup(null); setSection('principles'); }}
+              className={`transition ${hearts <= 0 ? 'cursor-not-allowed' : 'cursor-pointer hover:fill-slate-50'}`}
+            />
 
             {/* Center text - schwarz */}
             <text x="250" y="245" textAnchor="middle" dy="0.3em" fill="#000000" fontSize="14" fontWeight="300" pointerEvents="none" letterSpacing="2">
@@ -597,6 +702,19 @@ export default function YuYuApp() {
             ))}
           </svg>
         </div>
+
+        {/* Herzen: klickbar für Verlauf + Strafaufgabe; hier auch sichtbar, wenn andere Bereiche gesperrt sind */}
+        <div className="flex flex-col items-center cursor-pointer" onClick={() => setShowHeartLog(prev => !prev)}>
+          <div className="flex gap-0.5 sm:gap-1">{renderHearts()}</div>
+          <p className="text-[10px] sm:text-xs text-slate-400 font-light mt-1">{Number(hearts.toFixed(2))} / {MAX_HEARTS} Herzen</p>
+        </div>
+        {showHeartLog && renderHeartLogPanel()}
+
+        {hearts <= 0 && (
+          <p className="text-red-500 text-xs font-light tracking-wide mt-3 text-center max-w-xs">
+            Keine Herzen mehr - nur noch Aufgaben sind zugänglich, bis du wieder welche gesammelt hast.
+          </p>
+        )}
 
         {/* Bottom info */}
         <p className="text-slate-400 text-xs font-light tracking-wide mt-4">click a segment to begin</p>
@@ -655,6 +773,16 @@ export default function YuYuApp() {
               <p className="text-xs text-slate-400 font-light mt-0.5">{openTodos.length} offen</p>
             </div>
           </div>
+
+          {/* Strafaufgabe: erscheint, sobald 0 Herzen erreicht sind - andere Bereiche sind währenddessen gesperrt */}
+          {hearts <= 0 && (
+            <div className="mb-6 sm:mb-8 p-4 border border-red-200 bg-red-50 rounded-lg">
+              <p className="text-xs text-red-500 font-light uppercase tracking-wide mb-1">Strafaufgabe</p>
+              <p className="text-sm text-slate-900">
+                {penaltyTask || 'Noch keine festgelegt - klicke auf die Herzleiste, um eine einzutragen.'}
+              </p>
+            </div>
+          )}
 
           {/* Aufgabe hinzufügen - schlicht, wie ein normaler Listeneintrag */}
           <div className="mb-6 sm:mb-8 py-1.5 px-1">
@@ -770,11 +898,12 @@ export default function YuYuApp() {
               </h1>
               <p className="text-sm text-slate-400 font-light mt-1">{virtueGroups.length} {virtueGroups.length === 1 ? 'Oberkategorie' : 'Oberkategorien'}</p>
 
-              {/* Herzen: character-weite Lebensanzeige */}
-              <div className="mt-3">
+              {/* Herzen: character-weite Lebensanzeige, klickbar für Verlauf + Strafaufgabe */}
+              <div className="mt-3 cursor-pointer" onClick={() => setShowHeartLog(prev => !prev)}>
                 <div className="flex gap-0.5 sm:gap-1">{renderHearts()}</div>
                 <p className="text-[10px] sm:text-xs text-slate-400 font-light mt-1">{Number(hearts.toFixed(2))} / {MAX_HEARTS} Herzen</p>
               </div>
+              {showHeartLog && renderHeartLogPanel()}
             </div>
           </div>
 
