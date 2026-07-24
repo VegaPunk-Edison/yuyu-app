@@ -4,8 +4,6 @@ import { Trash2, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil, ChevronDown 
 const MAX_HEARTS = 7;
 const HEART_LOSS_PER_FAIL = 0.25;
 
-const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 const loadJSON = (key, fallback) => {
   try {
     const saved = localStorage.getItem(key);
@@ -15,121 +13,6 @@ const loadJSON = (key, fallback) => {
     return fallback;
   }
 };
-
-// Freistehende Komponente (nicht innerhalb von YuYuApp definiert), damit React sie nicht bei
-// jedem Render der Elternkomponente neu erzeugt und dadurch den Fokus verliert.
-// Textfeld mit @Mention-Autocomplete: tippt man "@Name", erscheint ein Dropdown mit passenden
-// Tugenden; eine Auswahl fügt "@VollerName " in den Text ein. Beim Absenden werden alle
-// erkannten "@VollerName"-Vorkommen aus dem gespeicherten Text entfernt und als verknüpfte
-// Tugend-IDs an onSubmit übergeben.
-function MentionTextInput({ placeholder, virtues, onSubmit, className, wrapperClassName, autoFocus }) {
-  const [value, setValue] = useState('');
-  const [mentionQuery, setMentionQuery] = useState(null);
-  const [mentionStart, setMentionStart] = useState(null);
-  const inputRef = useRef(null);
-
-  const suggestions = mentionQuery !== null
-    ? virtues.filter(v => v.name.toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 5)
-    : [];
-
-  const updateMentionState = (text, cursorPos) => {
-    const before = text.slice(0, cursorPos);
-    const atIndex = before.lastIndexOf('@');
-    if (atIndex === -1 || /\s/.test(before.slice(atIndex + 1))) {
-      setMentionQuery(null);
-      setMentionStart(null);
-      return;
-    }
-    setMentionQuery(before.slice(atIndex + 1));
-    setMentionStart(atIndex);
-  };
-
-  const handleChange = (e) => {
-    setValue(e.target.value);
-    updateMentionState(e.target.value, e.target.selectionStart);
-  };
-
-  const selectSuggestion = (virtue) => {
-    if (mentionStart == null) return;
-    const cursorPos = inputRef.current?.selectionStart ?? value.length;
-    const before = value.slice(0, mentionStart);
-    const after = value.slice(cursorPos);
-    const insertion = `@${virtue.name} `;
-    const newValue = `${before}${insertion}${after}`;
-    setValue(newValue);
-    setMentionQuery(null);
-    setMentionStart(null);
-    requestAnimationFrame(() => {
-      const pos = (before + insertion).length;
-      inputRef.current?.focus();
-      inputRef.current?.setSelectionRange(pos, pos);
-    });
-  };
-
-  const submit = () => {
-    if (!value.trim()) return;
-    const linkedIds = [];
-    let cleanText = value;
-    virtues.forEach(v => {
-      const pattern = '@' + escapeRegExp(v.name) + '(?=\\s|$)';
-      if (new RegExp(pattern).test(cleanText)) {
-        linkedIds.push(v.id);
-        cleanText = cleanText.replace(new RegExp(pattern, 'g'), '');
-      }
-    });
-    cleanText = cleanText.replace(/\s+/g, ' ').trim();
-    if (!cleanText) return;
-    onSubmit(cleanText, linkedIds);
-    setValue('');
-    setMentionQuery(null);
-    setMentionStart(null);
-  };
-
-  const handleKeyDown = (e) => {
-    if (mentionQuery !== null && suggestions.length > 0 && (e.key === 'Enter' || e.key === 'Tab')) {
-      e.preventDefault();
-      selectSuggestion(suggestions[0]);
-      return;
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      submit();
-    }
-    if (e.key === 'Escape') {
-      setMentionQuery(null);
-      setMentionStart(null);
-    }
-  };
-
-  return (
-    <div className={`relative ${wrapperClassName || ''}`}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={value}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        autoFocus={autoFocus}
-        className={className}
-      />
-      {mentionQuery !== null && suggestions.length > 0 && (
-        <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
-          {suggestions.map(v => (
-            <button
-              key={v.id}
-              type="button"
-              onMouseDown={(e) => { e.preventDefault(); selectSuggestion(v); }}
-              className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
-            >
-              {v.name}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 const GOAL_TITLE_MAX_LENGTH = 60;
 
@@ -254,6 +137,132 @@ function GoalForm({ virtues, onSubmit }) {
       >
         Ziel hinzufügen
       </button>
+    </div>
+  );
+}
+
+// Aufgabe anlegen: ein einziges Textfeld wandert per Enter durch die Stufen
+// Aufgabe -> Tugend(en, mehrfach möglich) -> Gewohnheit -> Lebensbereich.
+// Leeres Enter überspringt die aktuelle (optionale) Stufe.
+function TodoWizardInput({ virtues, onSubmit, placeholder, className, wrapperClassName }) {
+  const [stage, setStage] = useState('task');
+  const [value, setValue] = useState('');
+  const [taskText, setTaskText] = useState('');
+  const [linkedIds, setLinkedIds] = useState([]);
+  const [habit, setHabit] = useState('');
+
+  const suggestions = stage === 'virtue' && value
+    ? virtues.filter(v => v.name.toLowerCase().includes(value.toLowerCase()) && !linkedIds.includes(v.id)).slice(0, 5)
+    : [];
+
+  const addVirtue = (virtue) => {
+    setLinkedIds(prev => (prev.includes(virtue.id) ? prev : [...prev, virtue.id]));
+    setValue('');
+  };
+
+  const removeVirtue = (id) => setLinkedIds(prev => prev.filter(i => i !== id));
+
+  const reset = () => {
+    setStage('task');
+    setValue('');
+    setTaskText('');
+    setLinkedIds([]);
+    setHabit('');
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+
+    if (stage === 'task') {
+      if (!value.trim()) return;
+      setTaskText(value.trim());
+      setValue('');
+      setStage('virtue');
+      return;
+    }
+
+    if (stage === 'virtue') {
+      if (suggestions.length > 0) {
+        addVirtue(suggestions[0]);
+        return;
+      }
+      const match = virtues.find(v => v.name.toLowerCase() === value.trim().toLowerCase());
+      if (match) {
+        addVirtue(match);
+        return;
+      }
+      setValue('');
+      setStage('habit');
+      return;
+    }
+
+    if (stage === 'habit') {
+      setHabit(value.trim());
+      setValue('');
+      setStage('lifearea');
+      return;
+    }
+
+    // stage === 'lifearea'
+    onSubmit({ text: taskText, linkedIds, habit, lifeArea: value.trim() });
+    reset();
+  };
+
+  const placeholders = {
+    task: placeholder || '+ Aufgabe hinzufügen',
+    virtue: 'Tugend eingeben (mehrere möglich), Enter zum Bestätigen',
+    habit: 'Gewohnheit angeben (optional), Enter für weiter',
+    lifearea: 'Lebensbereich angeben (optional), Enter zum Abschließen',
+  };
+
+  return (
+    <div className={wrapperClassName}>
+      {stage !== 'task' && (
+        <p className="text-xs text-slate-400 font-light mb-1.5">
+          Aufgabe: <span className="text-slate-600">{taskText}</span>
+        </p>
+      )}
+      {linkedIds.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-1.5">
+          {linkedIds.map(id => {
+            const v = virtues.find(vv => vv.id === id);
+            if (!v) return null;
+            return (
+              <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
+                {v.name}
+                <button type="button" onClick={() => removeVirtue(id)} className="hover:text-blue-900">
+                  <X className="w-3 h-3" strokeWidth={2} />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+      <div className="relative">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholders[stage]}
+          className={className}
+        />
+        {stage === 'virtue' && suggestions.length > 0 && (
+          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+            {suggestions.map(v => (
+              <button
+                key={v.id}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); addVirtue(v); }}
+                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+              >
+                {v.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -423,7 +432,7 @@ export default function YuYuApp() {
     logHeartEvent('gain', label);
   };
 
-  const addTodo = (text, linkedVirtues = []) => {
+  const addTodo = (text, linkedVirtues = [], extra = {}) => {
     if (!text || !text.trim()) return;
     setTodos([...todos, {
       id: Date.now(),
@@ -431,6 +440,8 @@ export default function YuYuApp() {
       completed: false,
       failed: false,
       linkedItems: linkedVirtues,
+      habit: (extra.habit || '').trim(),
+      lifeArea: (extra.lifeArea || '').trim(),
       createdAt: new Date().toISOString(),
     }]);
   };
@@ -904,10 +915,10 @@ export default function YuYuApp() {
           <div className="mb-6 sm:mb-8 py-1.5 px-1">
             <div className="flex items-center gap-3">
               <Circle className="w-4 h-4 text-slate-200 flex-shrink-0" strokeWidth={1.5} />
-              <MentionTextInput
-                placeholder="+ Aufgabe hinzufügen (@Tugend zum Verknüpfen)"
+              <TodoWizardInput
+                placeholder="+ Aufgabe hinzufügen"
                 virtues={allVirtueItems}
-                onSubmit={(text, linkedIds) => addTodo(text, linkedIds)}
+                onSubmit={({ text, linkedIds, habit, lifeArea }) => addTodo(text, linkedIds, { habit, lifeArea })}
                 wrapperClassName="flex-1 min-w-0"
                 className="w-full text-base sm:text-sm font-light text-slate-400 placeholder-slate-300 outline-none focus:text-slate-900"
               />
@@ -920,30 +931,49 @@ export default function YuYuApp() {
               <p className="text-slate-400 text-sm font-light text-center py-12">Noch keine Aufgaben — leg los ✍️</p>
             ) : (
               <>
-                {openTodos.map(todo => (
-                  <div key={todo.id} className="flex items-center gap-3 py-1.5 px-1 group/task hover:bg-slate-50 rounded transition">
+                {openTodos.map(todo => {
+                  const todoVirtues = (todo.linkedItems || []).map(vid => allVirtueItems.find(v => v.id === vid)).filter(Boolean);
+                  const hasExtras = todo.habit || todo.lifeArea || todoVirtues.length > 0;
+                  return (
+                  <div key={todo.id} className="flex items-start gap-3 py-1.5 px-1 group/task hover:bg-slate-50 rounded transition">
                     <button
                       onClick={() => toggleTodo(todo.id)}
-                      className="text-slate-300 hover:text-blue-500 transition flex-shrink-0"
+                      className="mt-0.5 text-slate-300 hover:text-blue-500 transition flex-shrink-0"
                     >
                       <Circle className="w-4 h-4" strokeWidth={1.5} />
                     </button>
-                    <span className="flex-1 text-sm font-light text-slate-900">{todo.text}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-light text-slate-900">{todo.text}</span>
+                      {hasExtras && (
+                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                          {todo.lifeArea && (
+                            <span className="text-[10px] text-blue-600 font-light">{todo.lifeArea}</span>
+                          )}
+                          {todo.habit && (
+                            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[10px] rounded-full">{todo.habit}</span>
+                          )}
+                          {todoVirtues.map(v => (
+                            <span key={v.id} className="px-1.5 py-0.5 bg-blue-50 text-blue-700 text-[10px] rounded-full">{v.name}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <button
                       onClick={() => failTodo(todo.id)}
                       title="Als gescheitert markieren"
-                      className="p-1.5 -m-1.5 text-slate-300 hover:text-orange-500 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
+                      className="mt-0.5 p-1.5 -m-1.5 text-slate-300 hover:text-orange-500 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
                     >
                       <X className="w-3.5 h-3.5" strokeWidth={1.5} />
                     </button>
                     <button
                       onClick={() => deleteTodo(todo.id)}
-                      className="p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
+                      className="mt-0.5 p-1.5 -m-1.5 text-slate-300 hover:text-red-400 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
                     >
                       <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                     </button>
                   </div>
-                ))}
+                  );
+                })}
 
                 {/* Gescheiterte Aufgaben */}
                 {failedTodos.length > 0 && (
