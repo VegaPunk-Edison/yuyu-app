@@ -4,6 +4,18 @@ import { Trash2, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil, ChevronDown 
 const MAX_HEARTS = 7;
 const HEART_LOSS_PER_FAIL = 0.25;
 
+// Die vier Lebensbereiche sind fest vorgegeben, keine frei anlegbaren Einträge
+const FIXED_LIFE_AREAS = ['Persönlich', 'Familie & Freunde', 'Arbeit', 'Gemeinde'];
+const LIFE_AREA_XP_PER_COMPLETION = 10;
+// Herz-Pfad in einem 100x100-Viewbox, unterteilt in vier Viertel (siehe LIFE_AREA_QUADRANTS)
+const HEART_PATH = 'M50,30 A20,20 0 0 1 90,30 Q90,60 50,90 Q10,60 10,30 A20,20 0 0 1 50,30 Z';
+const LIFE_AREA_QUADRANTS = [
+  { name: 'Persönlich', lines: ['Persönlich'], x: 10, y: 10 },
+  { name: 'Familie & Freunde', lines: ['Familie &', 'Freunde'], x: 50, y: 10 },
+  { name: 'Arbeit', lines: ['Arbeit'], x: 10, y: 50 },
+  { name: 'Gemeinde', lines: ['Gemeinde'], x: 50, y: 50 },
+];
+
 const loadJSON = (key, fallback) => {
   try {
     const saved = localStorage.getItem(key);
@@ -20,13 +32,23 @@ const GOAL_TITLE_MAX_LENGTH = 60;
 // -> Titel (Pflicht, zeichenbegrenzt) -> gewünschtes Ergebnis (Pflicht) -> Tugend(en, mehrfach
 // möglich, optional). Jede Antwort wird oben als Zusammenfassung angezeigt; am Ende bestätigt
 // ein "Speichern"-Klick oder leeres Enter auf der letzten Stufe das Ziel auf einmal.
-function GoalForm({ virtues, onSubmit }) {
+function GoalForm({ virtues, lifeAreas, onSubmit }) {
   const [stage, setStage] = useState('lifearea');
   const [value, setValue] = useState('');
-  const [lifeArea, setLifeArea] = useState('');
+  const [lifeArea, setLifeArea] = useState(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [linkedIds, setLinkedIds] = useState([]);
+  const inputRef = useRef(null);
+
+  // Fokus wandert mit, damit man ohne erneutes Antippen weiterschreiben kann
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [stage]);
+
+  const lifeAreaSuggestions = stage === 'lifearea' && value
+    ? lifeAreas.filter(a => a.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5)
+    : [];
 
   const virtueSuggestions = stage === 'virtue' && value
     ? virtues.filter(v => v.name.toLowerCase().includes(value.toLowerCase()) && !linkedIds.includes(v.id)).slice(0, 5)
@@ -42,7 +64,7 @@ function GoalForm({ virtues, onSubmit }) {
   const reset = () => {
     setStage('lifearea');
     setValue('');
-    setLifeArea('');
+    setLifeArea(null);
     setTitle('');
     setDescription('');
     setLinkedIds([]);
@@ -50,7 +72,7 @@ function GoalForm({ virtues, onSubmit }) {
 
   const save = () => {
     if (!title.trim() || !description.trim()) return;
-    onSubmit({ lifeArea, title, description, linkedIds });
+    onSubmit({ lifeAreaId: lifeArea?.id || null, title, description, linkedIds });
     reset();
   };
 
@@ -59,7 +81,10 @@ function GoalForm({ virtues, onSubmit }) {
     e.preventDefault();
 
     if (stage === 'lifearea') {
-      setLifeArea(value.trim());
+      const match = lifeAreaSuggestions.length > 0
+        ? lifeAreaSuggestions[0]
+        : lifeAreas.find(a => a.name.toLowerCase() === value.trim().toLowerCase());
+      if (match) setLifeArea(match);
       setValue('');
       setStage('title');
       return;
@@ -105,7 +130,7 @@ function GoalForm({ virtues, onSubmit }) {
     <div>
       {(lifeArea || title || description) && (
         <div className="mb-2 space-y-0.5">
-          {lifeArea && <p className="text-xs text-blue-600 font-light">{lifeArea}</p>}
+          {lifeArea && <p className="text-xs text-blue-600 font-light">{lifeArea.name}</p>}
           {title && <p className="text-sm text-slate-900">{title}</p>}
           {description && <p className="text-xs text-slate-500 font-light">{description}</p>}
         </div>
@@ -130,6 +155,7 @@ function GoalForm({ virtues, onSubmit }) {
       <div className="relative">
         {stage === 'title' ? (
           <input
+            ref={inputRef}
             type="text"
             value={value}
             onChange={(e) => setValue(e.target.value.slice(0, GOAL_TITLE_MAX_LENGTH))}
@@ -140,6 +166,7 @@ function GoalForm({ virtues, onSubmit }) {
           />
         ) : stage === 'outcome' ? (
           <textarea
+            ref={inputRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -149,6 +176,7 @@ function GoalForm({ virtues, onSubmit }) {
           />
         ) : (
           <input
+            ref={inputRef}
             type="text"
             value={value}
             onChange={(e) => setValue(e.target.value)}
@@ -156,6 +184,20 @@ function GoalForm({ virtues, onSubmit }) {
             placeholder={placeholders[stage]}
             className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
           />
+        )}
+        {stage === 'lifearea' && lifeAreaSuggestions.length > 0 && (
+          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+            {lifeAreaSuggestions.map(a => (
+              <button
+                key={a.id}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); setLifeArea(a); setValue(''); setStage('title'); }}
+                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+              >
+                {a.name}
+              </button>
+            ))}
+          </div>
         )}
         {stage === 'virtue' && virtueSuggestions.length > 0 && (
           <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
@@ -281,15 +323,25 @@ function GoalMilestones({ goal, onAdd, onToggle, onDelete }) {
 // Aufgabe anlegen: ein einziges Textfeld wandert per Enter durch die Stufen
 // Aufgabe -> Tugend(en, mehrfach möglich) -> Gewohnheit -> Lebensbereich.
 // Leeres Enter überspringt die aktuelle (optionale) Stufe.
-function TodoWizardInput({ virtues, onSubmit, placeholder, className, wrapperClassName }) {
+function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className, wrapperClassName }) {
   const [stage, setStage] = useState('task');
   const [value, setValue] = useState('');
   const [taskText, setTaskText] = useState('');
   const [linkedIds, setLinkedIds] = useState([]);
   const [habit, setHabit] = useState('');
+  const inputRef = useRef(null);
+
+  // Fokus wandert mit, damit man ohne erneutes Antippen weiterschreiben kann
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [stage]);
 
   const suggestions = stage === 'virtue' && value
     ? virtues.filter(v => v.name.toLowerCase().includes(value.toLowerCase()) && !linkedIds.includes(v.id)).slice(0, 5)
+    : [];
+
+  const lifeAreaSuggestions = stage === 'lifearea' && value
+    ? lifeAreas.filter(a => a.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5)
     : [];
 
   const addVirtue = (virtue) => {
@@ -342,7 +394,10 @@ function TodoWizardInput({ virtues, onSubmit, placeholder, className, wrapperCla
     }
 
     // stage === 'lifearea'
-    onSubmit({ text: taskText, linkedIds, habit, lifeArea: value.trim() });
+    const match = lifeAreaSuggestions.length > 0
+      ? lifeAreaSuggestions[0]
+      : lifeAreas.find(a => a.name.toLowerCase() === value.trim().toLowerCase());
+    onSubmit({ text: taskText, linkedIds, habit, lifeAreaId: match?.id || null });
     reset();
   };
 
@@ -378,6 +433,7 @@ function TodoWizardInput({ virtues, onSubmit, placeholder, className, wrapperCla
       )}
       <div className="relative">
         <input
+          ref={inputRef}
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -399,6 +455,24 @@ function TodoWizardInput({ virtues, onSubmit, placeholder, className, wrapperCla
             ))}
           </div>
         )}
+        {stage === 'lifearea' && lifeAreaSuggestions.length > 0 && (
+          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+            {lifeAreaSuggestions.map(a => (
+              <button
+                key={a.id}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSubmit({ text: taskText, linkedIds, habit, lifeAreaId: a.id });
+                  reset();
+                }}
+                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+              >
+                {a.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -406,7 +480,21 @@ function TodoWizardInput({ virtues, onSubmit, placeholder, className, wrapperCla
 
 export default function YuYuApp() {
   const [section, setSection] = useState('hub');
-  const [items, setItems] = useState(() => loadJSON('yuyu-items', []));
+  const [items, setItems] = useState(() => {
+    const saved = loadJSON('yuyu-items', []);
+    if (saved.some(i => i.type === 'life-areas')) return saved;
+    // Die vier Lebensbereiche sind feste Einträge, keine vom User angelegten - einmalig seeden
+    const seededLifeAreas = FIXED_LIFE_AREAS.map((name, i) => ({
+      id: Date.now() + i,
+      type: 'life-areas',
+      name,
+      level: 0,
+      experience: 0,
+      maxExperience: 100,
+      createdAt: new Date().toISOString(),
+    }));
+    return [...saved, ...seededLifeAreas];
+  });
   const [todos, setTodos] = useState(() => {
     const saved = loadJSON('yuyu-todos', null);
     if (saved !== null) return saved;
@@ -432,6 +520,7 @@ export default function YuYuApp() {
   const [showHeartLog, setShowHeartLog] = useState(false);
   const [editingPenaltyTask, setEditingPenaltyTask] = useState(false);
   const [penaltyTaskDraft, setPenaltyTaskDraft] = useState('');
+  const [selectedLifeAreaId, setSelectedLifeAreaId] = useState(null);
   const importFileInputRef = useRef(null);
 
   const categories = [
@@ -518,7 +607,7 @@ export default function YuYuApp() {
       newItem.maxExperience = 100;
       if (section === 'goals') {
         newItem.linkedItems = linkedVirtues;
-        newItem.lifeArea = (extra.lifeArea || '').trim();
+        newItem.lifeAreaId = extra.lifeAreaId || null;
         newItem.description = (extra.description || '').trim();
         newItem.milestones = [];
       }
@@ -602,7 +691,7 @@ export default function YuYuApp() {
       failed: false,
       linkedItems: linkedVirtues,
       habit: (extra.habit || '').trim(),
-      lifeArea: (extra.lifeArea || '').trim(),
+      lifeAreaId: extra.lifeAreaId || null,
       createdAt: new Date().toISOString(),
     }]);
   };
@@ -614,6 +703,7 @@ export default function YuYuApp() {
     setTodos(todos.map(t => (t.id === todoId ? { ...t, completed: true } : t)));
     gainVirtuePoint(todo.linkedItems || []);
     gainHeart(`Aufgabe erledigt: "${todo.text}"`);
+    gainLifeAreaXP(todo.lifeAreaId);
   };
 
   // Aufgabe als gescheitert markieren: kostet ein Viertel-Herz
@@ -635,6 +725,22 @@ export default function YuYuApp() {
     ));
   };
 
+  // Lebensbereich sammelt XP durch Beteiligung an Zielen/Aufgaben; bei vollem Balken steigt das Level
+  const gainLifeAreaXP = (lifeAreaId) => {
+    if (!lifeAreaId) return;
+    setItems(prev => prev.map(i => {
+      if (i.id !== lifeAreaId) return i;
+      const maxExperience = i.maxExperience || 100;
+      let experience = (i.experience || 0) + LIFE_AREA_XP_PER_COMPLETION;
+      let level = i.level || 0;
+      while (experience >= maxExperience) {
+        experience -= maxExperience;
+        level += 1;
+      }
+      return { ...i, experience, level };
+    }));
+  };
+
   const deleteItem = (id) => {
     setItems(items.filter(i => i.id !== id));
   };
@@ -653,6 +759,7 @@ export default function YuYuApp() {
     if (!item || item.failed || item.completed) return;
     setItems(prev => prev.map(i => (i.id === id ? { ...i, completed: true } : i)));
     gainVirtuePoint(item.linkedItems || []);
+    gainLifeAreaXP(item.lifeAreaId);
   };
 
   const toggleSelectItem = (id) => {
@@ -730,6 +837,7 @@ export default function YuYuApp() {
 
   const sectionItems = items.filter(itemInScope);
   const allVirtueItems = items.filter(i => i.type === 'principles');
+  const allLifeAreaItems = items.filter(i => i.type === 'life-areas');
 
   // Text in mehrere Zeilen umbrechen, damit er ins Puzzleteil passt
   const wrapPuzzleText = (name, maxCharsPerLine = 11) => {
@@ -1079,7 +1187,8 @@ export default function YuYuApp() {
               <TodoWizardInput
                 placeholder="+ Aufgabe hinzufügen"
                 virtues={allVirtueItems}
-                onSubmit={({ text, linkedIds, habit, lifeArea }) => addTodo(text, linkedIds, { habit, lifeArea })}
+                lifeAreas={allLifeAreaItems}
+                onSubmit={({ text, linkedIds, habit, lifeAreaId }) => addTodo(text, linkedIds, { habit, lifeAreaId })}
                 wrapperClassName="flex-1 min-w-0"
                 className="w-full text-base sm:text-sm font-light text-slate-400 placeholder-slate-300 outline-none focus:text-slate-900"
               />
@@ -1094,7 +1203,8 @@ export default function YuYuApp() {
               <>
                 {openTodos.map(todo => {
                   const todoVirtues = (todo.linkedItems || []).map(vid => allVirtueItems.find(v => v.id === vid)).filter(Boolean);
-                  const hasExtras = todo.habit || todo.lifeArea || todoVirtues.length > 0;
+                  const todoLifeArea = allLifeAreaItems.find(a => a.id === todo.lifeAreaId);
+                  const hasExtras = todo.habit || todoLifeArea || todoVirtues.length > 0;
                   return (
                   <div key={todo.id} className="flex items-start gap-3 py-1.5 px-1 group/task hover:bg-slate-50 rounded transition">
                     <button
@@ -1107,8 +1217,8 @@ export default function YuYuApp() {
                       <span className="text-sm font-light text-slate-900">{todo.text}</span>
                       {hasExtras && (
                         <div className="flex flex-wrap items-center gap-1 mt-1">
-                          {todo.lifeArea && (
-                            <span className="text-[10px] text-blue-600 font-light">{todo.lifeArea}</span>
+                          {todoLifeArea && (
+                            <span className="text-[10px] text-blue-600 font-light">{todoLifeArea.name}</span>
                           )}
                           {todo.habit && (
                             <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[10px] rounded-full">{todo.habit}</span>
@@ -1639,6 +1749,173 @@ export default function YuYuApp() {
     );
   }
 
+  // LEBENSBEREICH VIEW: vier feste Bereiche als Viertel eines großen Herzens; jedes Viertel
+  // klickbar für eine Pop-up-Detailseite. Jeder Bereich sammelt XP durch abgeschlossene
+  // Ziele/Aufgaben, die ihm zugeordnet sind (siehe gainLifeAreaXP).
+  if (section === 'life-areas') {
+    const popupArea = allLifeAreaItems.find(a => a.id === selectedLifeAreaId);
+
+    return (
+      <div className="min-h-screen bg-white p-4 sm:p-8">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-start gap-3 sm:gap-6 mb-6 pb-4 sm:mb-12 sm:pb-8 border-b border-slate-200">
+            <button
+              onClick={() => setSection('hub')}
+              className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
+            >
+              <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
+            </button>
+            <div>
+              <h1 className="text-2xl sm:text-4xl font-light text-slate-900 tracking-tight">Lebensbereich</h1>
+              <p className="text-sm text-slate-400 font-light mt-1">4 Lebensbereiche</p>
+            </div>
+          </div>
+
+          <div className="flex justify-center">
+            <svg viewBox="0 0 100 100" className="w-[min(80vw,360px)] h-[min(80vw,360px)]">
+              <defs>
+                <clipPath id="heart-clip">
+                  <path d={HEART_PATH} />
+                </clipPath>
+              </defs>
+              <g clipPath="url(#heart-clip)">
+                {LIFE_AREA_QUADRANTS.map((q) => {
+                  const area = allLifeAreaItems.find(a => a.name === q.name);
+                  const pct = area ? Math.min(100, ((area.experience || 0) / (area.maxExperience || 100)) * 100) : 0;
+                  const fillHeight = 40 * (pct / 100);
+                  return (
+                    <g key={q.name}>
+                      <rect x={q.x} y={q.y} width="40" height="40" fill="#ffe4e6" />
+                      <rect
+                        x={q.x}
+                        y={q.y + (40 - fillHeight)}
+                        width="40"
+                        height={fillHeight}
+                        fill="#fb7185"
+                        className="transition-all"
+                      />
+                    </g>
+                  );
+                })}
+                <line x1="50" y1="8" x2="50" y2="92" stroke="#ffffff" strokeWidth="1" />
+                <line x1="8" y1="50" x2="92" y2="50" stroke="#ffffff" strokeWidth="1" />
+              </g>
+              <path d={HEART_PATH} fill="none" stroke="#e11d48" strokeWidth="1.5" />
+              {LIFE_AREA_QUADRANTS.map((q) => {
+                const area = allLifeAreaItems.find(a => a.name === q.name);
+                return (
+                  <g
+                    key={`hit-${q.name}`}
+                    onClick={() => area && setSelectedLifeAreaId(area.id)}
+                    className="cursor-pointer"
+                  >
+                    <rect x={q.x} y={q.y} width="40" height="40" fill="transparent" />
+                    <text textAnchor="middle" fontSize="6" fontWeight="500" fill="#881337" fontFamily="'Lora', serif">
+                      {q.lines.map((line, li) => (
+                        <tspan key={li} x={q.x + 20} y={q.y + 15 + li * 7}>{line}</tspan>
+                      ))}
+                    </text>
+                    <text
+                      x={q.x + 20}
+                      y={q.y + 15 + q.lines.length * 7 + 4}
+                      textAnchor="middle"
+                      fontSize="5"
+                      fill="#881337"
+                      opacity="0.7"
+                    >
+                      Lv. {area?.level || 0}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+
+          {popupArea && (() => {
+            const linkedGoals = items.filter(i => i.type === 'goals' && i.lifeAreaId === popupArea.id);
+            const linkedTodos = todos.filter(t => t.lifeAreaId === popupArea.id);
+            const pct = Math.min(100, ((popupArea.experience || 0) / (popupArea.maxExperience || 100)) * 100);
+            return (
+              <div
+                className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+                onClick={() => setSelectedLifeAreaId(null)}
+              >
+                <div
+                  className="bg-white rounded-xl max-w-sm w-full p-6 max-h-[80vh] overflow-y-auto"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <h2 className="text-xl font-light text-slate-900">{popupArea.name}</h2>
+                    <button
+                      onClick={() => setSelectedLifeAreaId(null)}
+                      className="p-1.5 -m-1.5 text-slate-300 hover:text-slate-600 transition"
+                    >
+                      <X className="w-4 h-4" strokeWidth={1.5} />
+                    </button>
+                  </div>
+
+                  <div className="mb-6">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs text-slate-400">Level {popupArea.level || 0}</span>
+                      <span className="text-xs text-slate-400">{popupArea.experience || 0}/{popupArea.maxExperience || 100} XP</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-rose-400 to-rose-600 transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {(linkedGoals.length > 0 || linkedTodos.length > 0) ? (
+                    <div className="space-y-3">
+                      {linkedGoals.length > 0 && (
+                        <div>
+                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Ziele</p>
+                          <div className="space-y-1">
+                            {linkedGoals.map(g => (
+                              <p
+                                key={g.id}
+                                className={`text-sm font-light ${
+                                  g.completed ? 'text-green-700 line-through' : g.failed ? 'text-slate-400 line-through' : 'text-slate-900'
+                                }`}
+                              >
+                                {g.name}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {linkedTodos.length > 0 && (
+                        <div>
+                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Aufgaben</p>
+                          <div className="space-y-1">
+                            {linkedTodos.map(t => (
+                              <p
+                                key={t.id}
+                                className={`text-sm font-light ${
+                                  t.completed ? 'text-green-700 line-through' : t.failed ? 'text-slate-400 line-through' : 'text-slate-900'
+                                }`}
+                              >
+                                {t.text}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-400 font-light">Noch keine verknüpften Ziele oder Aufgaben.</p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+    );
+  }
+
   // SECTION VIEW (Ziele, Lebensbereiche, Gewohnheiten)
   return (
     <div className="min-h-screen bg-white p-4 sm:p-8">
@@ -1664,8 +1941,9 @@ export default function YuYuApp() {
           {section === 'goals' ? (
             <GoalForm
               virtues={allVirtueItems}
-              onSubmit={({ lifeArea, title, description, linkedIds }) =>
-                addItem(title, linkedIds, { lifeArea, description })
+              lifeAreas={allLifeAreaItems}
+              onSubmit={({ lifeAreaId, title, description, linkedIds }) =>
+                addItem(title, linkedIds, { lifeAreaId, description })
               }
             />
           ) : (
@@ -1807,8 +2085,8 @@ export default function YuYuApp() {
                       )}
                     </div>
 
-                    {section === 'goals' && item.lifeArea && (
-                      <p className="text-xs text-blue-600 font-light mb-1">{item.lifeArea}</p>
+                    {section === 'goals' && allLifeAreaItems.find(a => a.id === item.lifeAreaId) && (
+                      <p className="text-xs text-blue-600 font-light mb-1">{allLifeAreaItems.find(a => a.id === item.lifeAreaId).name}</p>
                     )}
                     {section === 'goals' && item.description && (
                       <p className="text-xs text-slate-500 font-light mb-2 whitespace-pre-wrap">{item.description}</p>
