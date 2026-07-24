@@ -652,7 +652,7 @@ export default function YuYuApp() {
   const categories = [
     { id: 'goals', label: 'Ziel', labelPlural: 'Ziele', startAngle: 0, endAngle: 90 },
     { id: 'life-areas', label: 'Lebensbereich', labelPlural: 'Lebensbereiche', startAngle: 90, endAngle: 180 },
-    { id: 'skills', label: 'Fähigkeit', labelPlural: 'Fähigkeiten', startAngle: 180, endAngle: 270 },
+    { id: 'skills', label: 'Gewohnheiten & Fähigkeiten', labelPlural: 'Gewohnheiten & Fähigkeiten', startAngle: 180, endAngle: 270 },
     { id: 'todos', label: 'Aufgabe', labelPlural: 'Aufgaben', startAngle: 270, endAngle: 360 }
   ];
 
