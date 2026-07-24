@@ -646,7 +646,7 @@ export default function YuYuApp() {
   const [editingPenaltyTask, setEditingPenaltyTask] = useState(false);
   const [penaltyTaskDraft, setPenaltyTaskDraft] = useState('');
   const [selectedLifeAreaId, setSelectedLifeAreaId] = useState(null);
-  const [skillsTab, setSkillsTab] = useState('skills');
+  const [skillsTab, setSkillsTab] = useState('habits');
   const importFileInputRef = useRef(null);
 
   const categories = [
@@ -661,8 +661,8 @@ export default function YuYuApp() {
   // Gewohnheiten leben als eigener Tab unter Fähigkeiten - der gespeicherte Item-Typ folgt
   // dem aktiven Tab, nicht dem Abschnittsnamen "skills" selbst.
   const SKILLS_TABS = [
-    { id: 'skills', label: 'Fähigkeit', labelPlural: 'Fähigkeiten' },
     { id: 'habits', label: 'Gewohnheit', labelPlural: 'Gewohnheiten' },
+    { id: 'skills', label: 'Fähigkeit', labelPlural: 'Fähigkeiten' },
   ];
   const effectiveItemType = section === 'skills' ? skillsTab : section;
   const activeCategory = section === 'skills' ? SKILLS_TABS.find(t => t.id === skillsTab) : currentCategory;
