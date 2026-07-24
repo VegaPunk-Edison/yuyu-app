@@ -48,7 +48,7 @@ function GoalForm({ virtues, onSubmit }) {
   };
 
   const submit = () => {
-    if (!title.trim()) return;
+    if (!title.trim() || !description.trim()) return;
     onSubmit({ lifeArea, title, description, linkedIds });
     setLifeArea('');
     setTitle('');
@@ -82,7 +82,7 @@ function GoalForm({ virtues, onSubmit }) {
       <textarea
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        placeholder="Ziel-Beschreibung"
+        placeholder="Gewünschtes Ergebnis - wie sieht es aus, wenn du es erreicht hast?"
         rows={3}
         className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-sm resize-none"
       />
@@ -132,11 +132,102 @@ function GoalForm({ virtues, onSubmit }) {
 
       <button
         onClick={submit}
-        disabled={!title.trim()}
+        disabled={!title.trim() || !description.trim()}
         className="text-sm text-blue-600 hover:text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed font-light transition"
       >
         Ziel hinzufügen
       </button>
+    </div>
+  );
+}
+
+// Fortschritts-"Strahl": horizontale Linie vom Start zum Ziel (rechtes Ende), mit einem Punkt
+// pro Meilenstein und einem Marker für den aktuellen Stand (Anteil erledigter Meilensteine).
+function GoalProgressRay({ milestones }) {
+  const completedCount = milestones.filter(m => m.completed).length;
+  const pct = (completedCount / milestones.length) * 100;
+
+  return (
+    <div className="my-3">
+      <div className="relative h-1.5 bg-slate-100 rounded-full">
+        <div
+          className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-400 to-blue-600 rounded-full transition-all"
+          style={{ width: `${pct}%` }}
+        />
+        {milestones.map((m, i) => {
+          const left = milestones.length === 1 ? 100 : (i / (milestones.length - 1)) * 100;
+          return (
+            <div
+              key={m.id}
+              title={m.name}
+              className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full border-2 ${
+                m.completed ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'
+              }`}
+              style={{ left: `${left}%` }}
+            />
+          );
+        })}
+        <div
+          title="Aktueller Stand"
+          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-amber-400 border-2 border-white shadow"
+          style={{ left: `${pct}%` }}
+        />
+      </div>
+      <div className="flex justify-between mt-1">
+        <span className="text-[10px] text-slate-400">Start</span>
+        <span className="text-[10px] text-slate-600 font-medium">Ziel</span>
+      </div>
+    </div>
+  );
+}
+
+// Meilensteine eines Ziels: werden nachträglich hinzugefügt, zeigen den Fortschritts-Strahl,
+// eine Liste zum Abhaken/Löschen und ein Eingabefeld für neue Meilensteine.
+function GoalMilestones({ goal, onAdd, onToggle, onDelete }) {
+  const [value, setValue] = useState('');
+  const milestones = goal.milestones || [];
+
+  const submit = () => {
+    if (!value.trim()) return;
+    onAdd(value);
+    setValue('');
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+      {milestones.length > 0 && <GoalProgressRay milestones={milestones} />}
+      {milestones.length > 0 && (
+        <div className="space-y-1 mb-2">
+          {milestones.map(m => (
+            <div key={m.id} className="flex items-center gap-2 group/milestone">
+              <button onClick={() => onToggle(m.id)} className="flex-shrink-0">
+                {m.completed ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" strokeWidth={1.5} />
+                ) : (
+                  <Circle className="w-3.5 h-3.5 text-slate-300" strokeWidth={1.5} />
+                )}
+              </button>
+              <span className={`flex-1 text-xs font-light ${m.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                {m.name}
+              </span>
+              <button
+                onClick={() => onDelete(m.id)}
+                className="p-1 -m-1 text-slate-300 hover:text-red-500 transition opacity-0 group-hover/milestone:opacity-100 flex-shrink-0"
+              >
+                <Trash2 className="w-3 h-3" strokeWidth={1.5} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
+        placeholder="Meilenstein hinzufügen"
+        className="w-full px-0 py-1 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-xs"
+      />
     </div>
   );
 }
@@ -383,9 +474,33 @@ export default function YuYuApp() {
         newItem.linkedItems = linkedVirtues;
         newItem.lifeArea = (extra.lifeArea || '').trim();
         newItem.description = (extra.description || '').trim();
+        newItem.milestones = [];
       }
     }
     setItems([...items, newItem]);
+  };
+
+  // Meilensteine werden nachträglich zu einem bestehenden Ziel hinzugefügt
+  const addMilestone = (goalId, name) => {
+    if (!name || !name.trim()) return;
+    setItems(items.map(i => (i.id === goalId
+      ? { ...i, milestones: [...(i.milestones || []), { id: Date.now(), name: name.trim(), completed: false }] }
+      : i
+    )));
+  };
+
+  const toggleMilestone = (goalId, milestoneId) => {
+    setItems(items.map(i => (i.id === goalId
+      ? { ...i, milestones: (i.milestones || []).map(m => (m.id === milestoneId ? { ...m, completed: !m.completed } : m)) }
+      : i
+    )));
+  };
+
+  const deleteMilestone = (goalId, milestoneId) => {
+    setItems(items.map(i => (i.id === goalId
+      ? { ...i, milestones: (i.milestones || []).filter(m => m.id !== milestoneId) }
+      : i
+    )));
   };
 
   // Tugend-Oberkategorien (z.B. "Old Money") gruppieren einzelne Tugenden
@@ -1664,6 +1779,15 @@ export default function YuYuApp() {
                           );
                         })}
                       </div>
+                    )}
+
+                    {section === 'goals' && (
+                      <GoalMilestones
+                        goal={item}
+                        onAdd={(name) => addMilestone(item.id, name)}
+                        onToggle={(milestoneId) => toggleMilestone(item.id, milestoneId)}
+                        onDelete={(milestoneId) => deleteMilestone(item.id, milestoneId)}
+                      />
                     )}
 
                     <div className="space-y-2">
