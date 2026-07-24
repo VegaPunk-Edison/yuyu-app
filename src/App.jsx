@@ -646,17 +646,26 @@ export default function YuYuApp() {
   const [editingPenaltyTask, setEditingPenaltyTask] = useState(false);
   const [penaltyTaskDraft, setPenaltyTaskDraft] = useState('');
   const [selectedLifeAreaId, setSelectedLifeAreaId] = useState(null);
+  const [skillsTab, setSkillsTab] = useState('skills');
   const importFileInputRef = useRef(null);
 
   const categories = [
     { id: 'goals', label: 'Ziel', labelPlural: 'Ziele', startAngle: 0, endAngle: 90 },
     { id: 'life-areas', label: 'Lebensbereich', labelPlural: 'Lebensbereiche', startAngle: 90, endAngle: 180 },
-    { id: 'habits', label: 'Gewohnheit', labelPlural: 'Gewohnheiten', startAngle: 180, endAngle: 270 },
+    { id: 'skills', label: 'Fähigkeit', labelPlural: 'Fähigkeiten', startAngle: 180, endAngle: 270 },
     { id: 'todos', label: 'Aufgabe', labelPlural: 'Aufgaben', startAngle: 270, endAngle: 360 }
   ];
 
   const allCategories = [...categories, { id: 'principles', label: 'Tugend', labelPlural: 'Tugenden' }];
   const currentCategory = allCategories.find(c => c.id === section);
+  // Gewohnheiten leben als eigener Tab unter Fähigkeiten - der gespeicherte Item-Typ folgt
+  // dem aktiven Tab, nicht dem Abschnittsnamen "skills" selbst.
+  const SKILLS_TABS = [
+    { id: 'skills', label: 'Fähigkeit', labelPlural: 'Fähigkeiten' },
+    { id: 'habits', label: 'Gewohnheit', labelPlural: 'Gewohnheiten' },
+  ];
+  const effectiveItemType = section === 'skills' ? skillsTab : section;
+  const activeCategory = section === 'skills' ? SKILLS_TABS.find(t => t.id === skillsTab) : currentCategory;
 
   // Nur noch Speichern läuft über einen Effekt; Laden passiert synchron in den useState-Initializern
   // oben (siehe loadJSON) - sonst gäbe es einen Wettlauf: dieser Effekt liefe beim ersten Mount mit
@@ -668,7 +677,7 @@ export default function YuYuApp() {
 
   // Bei 0 Herzen ist nur noch der Aufgaben-Bereich zugänglich (Strafaufgabe muss zuerst erledigt werden)
   useEffect(() => {
-    if (hearts <= 0 && ['principles', 'goals', 'life-areas', 'habits'].includes(section)) {
+    if (hearts <= 0 && ['principles', 'goals', 'life-areas', 'skills'].includes(section)) {
       setSection('todos');
     }
   }, [hearts, section]);
@@ -718,7 +727,7 @@ export default function YuYuApp() {
     if (section === 'principles' && !selectedVirtueGroup) return; // Tugenden nur innerhalb einer Oberkategorie
     const newItem = {
       id: Date.now(),
-      type: section,
+      type: effectiveItemType,
       name: name.trim(),
       createdAt: new Date().toISOString(),
     };
@@ -899,7 +908,7 @@ export default function YuYuApp() {
 
   // Welche Items gerade sichtbar/sortierbar sind: bei Tugenden zusätzlich nach Oberkategorie gefiltert
   const itemInScope = (i) => {
-    if (section !== 'principles') return i.type === section;
+    if (section !== 'principles') return i.type === effectiveItemType;
     return i.type === 'principles' && (selectedVirtueGroup ? i.groupId === selectedVirtueGroup : !i.groupId);
   };
 
@@ -2058,11 +2067,35 @@ export default function YuYuApp() {
           </button>
           <div>
             <h1 className="text-2xl sm:text-4xl font-light text-slate-900 tracking-tight">
-              {currentCategory?.label}
+              {activeCategory?.label}
             </h1>
-            <p className="text-sm text-slate-400 font-light mt-1">{sectionItems.length} {sectionItems.length === 1 ? currentCategory?.label : currentCategory?.labelPlural}</p>
+            <p className="text-sm text-slate-400 font-light mt-1">{sectionItems.length} {sectionItems.length === 1 ? activeCategory?.label : activeCategory?.labelPlural}</p>
           </div>
         </div>
+
+        {/* Gewohnheiten leben als eigener Tab unter Fähigkeiten */}
+        {section === 'skills' && (
+          <div className="flex items-center gap-1 mb-6 sm:mb-8 border-b border-slate-200 max-w-sm">
+            {SKILLS_TABS.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setSkillsTab(tab.id);
+                  setSelectionMode(false);
+                  setSelectedIds([]);
+                  setReorderMode(false);
+                }}
+                className={`px-3 py-2 text-sm font-light border-b-2 -mb-px transition ${
+                  skillsTab === tab.id
+                    ? 'text-blue-600 border-blue-600'
+                    : 'text-slate-400 border-transparent hover:text-slate-600'
+                }`}
+              >
+                {tab.labelPlural}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Add new */}
         <div className="mb-8 sm:mb-10 max-w-sm">
@@ -2085,7 +2118,7 @@ export default function YuYuApp() {
                   setNewItemName('');
                 }
               }}
-              placeholder={currentCategory?.label}
+              placeholder={activeCategory?.label}
               className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
             />
           )}
@@ -2096,7 +2129,7 @@ export default function YuYuApp() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase">
-                {currentCategory?.labelPlural}
+                {activeCategory?.labelPlural}
               </h2>
               <div className="flex items-center gap-3">
                 {selectionMode && selectedIds.length > 0 && (
