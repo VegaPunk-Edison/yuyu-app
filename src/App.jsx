@@ -128,7 +128,35 @@ function GoalForm({ virtues, lifeAreas, onSubmit }) {
     reset();
   };
 
+  // Eine Stufe zurück - z.B. um eine Antwort zu korrigieren; die vorherige Eingabe landet
+  // wieder editierbar im Feld, ihr bestätigter Wert wird dafür aus der Zusammenfassung entfernt.
+  const goBack = () => {
+    if (stage === 'title') {
+      setValue(lifeArea?.name || '');
+      setLifeArea(null);
+      setStage('lifearea');
+      return;
+    }
+    if (stage === 'outcome') {
+      setValue(title);
+      setTitle('');
+      setStage('title');
+      return;
+    }
+    if (stage === 'virtue') {
+      setValue(description);
+      setDescription('');
+      setStage('outcome');
+    }
+  };
+
   const handleKeyDown = (e) => {
+    if (e.key === 'Backspace' && value === '' && stage !== 'lifearea') {
+      e.preventDefault();
+      goBack();
+      return;
+    }
+
     if (e.key !== 'Enter') return;
     e.preventDefault();
 
@@ -269,14 +297,24 @@ function GoalForm({ virtues, lifeAreas, onSubmit }) {
 
       {stage === 'title' && <p className="text-[10px] text-slate-400 font-light mt-1 text-right">{value.length}/{GOAL_TITLE_MAX_LENGTH}</p>}
 
-      {stage === 'virtue' && (
-        <button
-          onClick={save}
-          className="mt-3 text-sm text-blue-600 hover:text-blue-700 font-light transition"
-        >
-          Ziel speichern
-        </button>
-      )}
+      <div className="flex items-center gap-4 mt-3">
+        {stage !== 'lifearea' && (
+          <button
+            onClick={goBack}
+            className="text-sm text-slate-400 hover:text-blue-600 font-light transition"
+          >
+            ← Zurück
+          </button>
+        )}
+        {stage === 'virtue' && (
+          <button
+            onClick={save}
+            className="text-sm text-blue-600 hover:text-blue-700 font-light transition"
+          >
+            Ziel speichern
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -411,7 +449,34 @@ function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className,
     setHabit('');
   };
 
+  // Eine Stufe zurück - z.B. um eine Antwort zu korrigieren; die vorherige Eingabe landet
+  // wieder editierbar im Feld, ihr bestätigter Wert wird dafür aus der Zusammenfassung entfernt.
+  const goBack = () => {
+    if (stage === 'virtue') {
+      setValue(taskText);
+      setTaskText('');
+      setStage('task');
+      return;
+    }
+    if (stage === 'habit') {
+      setValue('');
+      setStage('virtue');
+      return;
+    }
+    if (stage === 'lifearea') {
+      setValue(habit);
+      setHabit('');
+      setStage('habit');
+    }
+  };
+
   const handleKeyDown = (e) => {
+    if (e.key === 'Backspace' && value === '' && stage !== 'task') {
+      e.preventDefault();
+      goBack();
+      return;
+    }
+
     if (e.key !== 'Enter') return;
     e.preventDefault();
 
@@ -526,6 +591,14 @@ function TodoWizardInput({ virtues, lifeAreas, onSubmit, placeholder, className,
           </div>
         )}
       </div>
+      {stage !== 'task' && (
+        <button
+          onClick={goBack}
+          className="mt-2 text-xs text-slate-400 hover:text-blue-600 font-light transition"
+        >
+          ← Zurück
+        </button>
+      )}
     </div>
   );
 }
