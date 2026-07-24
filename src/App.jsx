@@ -16,127 +16,173 @@ const loadJSON = (key, fallback) => {
 
 const GOAL_TITLE_MAX_LENGTH = 60;
 
-// Ziel anlegen: Lebensbereich, kurzer Titel (zeichenbegrenzt), Beschreibung, dann Tugenden als
-// Tags (per Enter bestätigt) - erst der "Ziel hinzufügen"-Button legt das Ziel wirklich an.
+// Ziel anlegen: ein einziges Textfeld wandert per Enter durch die Stufen Lebensbereich (optional)
+// -> Titel (Pflicht, zeichenbegrenzt) -> gewünschtes Ergebnis (Pflicht) -> Tugend(en, mehrfach
+// möglich, optional). Jede Antwort wird oben als Zusammenfassung angezeigt; am Ende bestätigt
+// ein "Speichern"-Klick oder leeres Enter auf der letzten Stufe das Ziel auf einmal.
 function GoalForm({ virtues, onSubmit }) {
+  const [stage, setStage] = useState('lifearea');
+  const [value, setValue] = useState('');
   const [lifeArea, setLifeArea] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [linkedIds, setLinkedIds] = useState([]);
-  const [virtueQuery, setVirtueQuery] = useState('');
 
-  const virtueSuggestions = virtueQuery
-    ? virtues.filter(v => v.name.toLowerCase().includes(virtueQuery.toLowerCase()) && !linkedIds.includes(v.id)).slice(0, 5)
+  const virtueSuggestions = stage === 'virtue' && value
+    ? virtues.filter(v => v.name.toLowerCase().includes(value.toLowerCase()) && !linkedIds.includes(v.id)).slice(0, 5)
     : [];
 
   const addVirtue = (virtue) => {
     setLinkedIds(prev => (prev.includes(virtue.id) ? prev : [...prev, virtue.id]));
-    setVirtueQuery('');
+    setValue('');
   };
 
   const removeVirtue = (id) => setLinkedIds(prev => prev.filter(i => i !== id));
 
-  const handleVirtueKeyDown = (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    if (virtueSuggestions.length > 0) {
-      addVirtue(virtueSuggestions[0]);
-      return;
-    }
-    const match = virtues.find(v => v.name.toLowerCase() === virtueQuery.trim().toLowerCase());
-    if (match) addVirtue(match);
-  };
-
-  const submit = () => {
-    if (!title.trim() || !description.trim()) return;
-    onSubmit({ lifeArea, title, description, linkedIds });
+  const reset = () => {
+    setStage('lifearea');
+    setValue('');
     setLifeArea('');
     setTitle('');
     setDescription('');
     setLinkedIds([]);
-    setVirtueQuery('');
+  };
+
+  const save = () => {
+    if (!title.trim() || !description.trim()) return;
+    onSubmit({ lifeArea, title, description, linkedIds });
+    reset();
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+
+    if (stage === 'lifearea') {
+      setLifeArea(value.trim());
+      setValue('');
+      setStage('title');
+      return;
+    }
+
+    if (stage === 'title') {
+      if (!value.trim()) return;
+      setTitle(value.trim());
+      setValue('');
+      setStage('outcome');
+      return;
+    }
+
+    if (stage === 'outcome') {
+      if (!value.trim()) return;
+      setDescription(value.trim());
+      setValue('');
+      setStage('virtue');
+      return;
+    }
+
+    // stage === 'virtue'
+    if (virtueSuggestions.length > 0) {
+      addVirtue(virtueSuggestions[0]);
+      return;
+    }
+    const match = virtues.find(v => v.name.toLowerCase() === value.trim().toLowerCase());
+    if (match) {
+      addVirtue(match);
+      return;
+    }
+    save();
+  };
+
+  const placeholders = {
+    lifearea: 'Welchem Lebensbereich zuordnen? (optional)',
+    title: 'Was ist das Ziel?',
+    outcome: 'Gewünschtes Ergebnis - wie sieht es aus, wenn du es erreicht hast?',
+    virtue: 'Tugend eingeben (mehrere möglich), Enter zum Bestätigen',
   };
 
   return (
-    <div className="space-y-4">
-      <input
-        type="text"
-        value={lifeArea}
-        onChange={(e) => setLifeArea(e.target.value)}
-        placeholder="Welchem Lebensbereich zuordnen?"
-        className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
-      />
+    <div>
+      {(lifeArea || title || description) && (
+        <div className="mb-2 space-y-0.5">
+          {lifeArea && <p className="text-xs text-blue-600 font-light">{lifeArea}</p>}
+          {title && <p className="text-sm text-slate-900">{title}</p>}
+          {description && <p className="text-xs text-slate-500 font-light">{description}</p>}
+        </div>
+      )}
+      {linkedIds.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {linkedIds.map(id => {
+            const v = virtues.find(vv => vv.id === id);
+            if (!v) return null;
+            return (
+              <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
+                {v.name}
+                <button type="button" onClick={() => removeVirtue(id)} className="hover:text-blue-900">
+                  <X className="w-3 h-3" strokeWidth={2} />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      )}
 
-      <div>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value.slice(0, GOAL_TITLE_MAX_LENGTH))}
-          maxLength={GOAL_TITLE_MAX_LENGTH}
-          placeholder="Was ist das Ziel?"
-          className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
-        />
-        <p className="text-[10px] text-slate-400 font-light mt-1 text-right">{title.length}/{GOAL_TITLE_MAX_LENGTH}</p>
-      </div>
-
-      <textarea
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        placeholder="Gewünschtes Ergebnis - wie sieht es aus, wenn du es erreicht hast?"
-        rows={3}
-        className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-sm resize-none"
-      />
-
-      <div>
-        {linkedIds.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {linkedIds.map(id => {
-              const v = virtues.find(vv => vv.id === id);
-              if (!v) return null;
-              return (
-                <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
-                  {v.name}
-                  <button type="button" onClick={() => removeVirtue(id)} className="hover:text-blue-900">
-                    <X className="w-3 h-3" strokeWidth={2} />
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-        )}
-        <div className="relative">
+      <div className="relative">
+        {stage === 'title' ? (
           <input
             type="text"
-            value={virtueQuery}
-            onChange={(e) => setVirtueQuery(e.target.value)}
-            onKeyDown={handleVirtueKeyDown}
-            placeholder="Tugend eingeben, Enter zum Bestätigen"
-            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-sm"
+            value={value}
+            onChange={(e) => setValue(e.target.value.slice(0, GOAL_TITLE_MAX_LENGTH))}
+            onKeyDown={handleKeyDown}
+            maxLength={GOAL_TITLE_MAX_LENGTH}
+            placeholder={placeholders.title}
+            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
           />
-          {virtueSuggestions.length > 0 && (
-            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
-              {virtueSuggestions.map(v => (
-                <button
-                  key={v.id}
-                  type="button"
-                  onMouseDown={(e) => { e.preventDefault(); addVirtue(v); }}
-                  className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
-                >
-                  {v.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        ) : stage === 'outcome' ? (
+          <textarea
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholders.outcome}
+            rows={2}
+            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-sm resize-none"
+          />
+        ) : (
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholders[stage]}
+            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+          />
+        )}
+        {stage === 'virtue' && virtueSuggestions.length > 0 && (
+          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+            {virtueSuggestions.map(v => (
+              <button
+                key={v.id}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); addVirtue(v); }}
+                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+              >
+                {v.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <button
-        onClick={submit}
-        disabled={!title.trim() || !description.trim()}
-        className="text-sm text-blue-600 hover:text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed font-light transition"
-      >
-        Ziel hinzufügen
-      </button>
+      {stage === 'title' && <p className="text-[10px] text-slate-400 font-light mt-1 text-right">{value.length}/{GOAL_TITLE_MAX_LENGTH}</p>}
+
+      {stage === 'virtue' && (
+        <button
+          onClick={save}
+          className="mt-3 text-sm text-blue-600 hover:text-blue-700 font-light transition"
+        >
+          Ziel speichern
+        </button>
+      )}
     </div>
   );
 }
