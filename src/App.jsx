@@ -703,19 +703,6 @@ export default function YuYuApp() {
           </svg>
         </div>
 
-        {/* Herzen: klickbar für Verlauf + Strafaufgabe; hier auch sichtbar, wenn andere Bereiche gesperrt sind */}
-        <div className="flex flex-col items-center cursor-pointer" onClick={() => setShowHeartLog(prev => !prev)}>
-          <div className="flex gap-0.5 sm:gap-1">{renderHearts()}</div>
-          <p className="text-[10px] sm:text-xs text-slate-400 font-light mt-1">{Number(hearts.toFixed(2))} / {MAX_HEARTS} Herzen</p>
-        </div>
-        {showHeartLog && renderHeartLogPanel()}
-
-        {hearts <= 0 && (
-          <p className="text-red-500 text-xs font-light tracking-wide mt-3 text-center max-w-xs">
-            Keine Herzen mehr - nur noch Aufgaben sind zugänglich, bis du wieder welche gesammelt hast.
-          </p>
-        )}
-
         {/* Bottom info */}
         <p className="text-slate-400 text-xs font-light tracking-wide mt-4">click a segment to begin</p>
 
