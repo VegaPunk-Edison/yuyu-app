@@ -131,6 +131,133 @@ function MentionTextInput({ placeholder, virtues, onSubmit, className, wrapperCl
   );
 }
 
+const GOAL_TITLE_MAX_LENGTH = 60;
+
+// Ziel anlegen: Lebensbereich, kurzer Titel (zeichenbegrenzt), Beschreibung, dann Tugenden als
+// Tags (per Enter bestätigt) - erst der "Ziel hinzufügen"-Button legt das Ziel wirklich an.
+function GoalForm({ virtues, onSubmit }) {
+  const [lifeArea, setLifeArea] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [linkedIds, setLinkedIds] = useState([]);
+  const [virtueQuery, setVirtueQuery] = useState('');
+
+  const virtueSuggestions = virtueQuery
+    ? virtues.filter(v => v.name.toLowerCase().includes(virtueQuery.toLowerCase()) && !linkedIds.includes(v.id)).slice(0, 5)
+    : [];
+
+  const addVirtue = (virtue) => {
+    setLinkedIds(prev => (prev.includes(virtue.id) ? prev : [...prev, virtue.id]));
+    setVirtueQuery('');
+  };
+
+  const removeVirtue = (id) => setLinkedIds(prev => prev.filter(i => i !== id));
+
+  const handleVirtueKeyDown = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (virtueSuggestions.length > 0) {
+      addVirtue(virtueSuggestions[0]);
+      return;
+    }
+    const match = virtues.find(v => v.name.toLowerCase() === virtueQuery.trim().toLowerCase());
+    if (match) addVirtue(match);
+  };
+
+  const submit = () => {
+    if (!title.trim()) return;
+    onSubmit({ lifeArea, title, description, linkedIds });
+    setLifeArea('');
+    setTitle('');
+    setDescription('');
+    setLinkedIds([]);
+    setVirtueQuery('');
+  };
+
+  return (
+    <div className="space-y-4">
+      <input
+        type="text"
+        value={lifeArea}
+        onChange={(e) => setLifeArea(e.target.value)}
+        placeholder="Welchem Lebensbereich zuordnen?"
+        className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+      />
+
+      <div>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value.slice(0, GOAL_TITLE_MAX_LENGTH))}
+          maxLength={GOAL_TITLE_MAX_LENGTH}
+          placeholder="Was ist das Ziel?"
+          className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+        />
+        <p className="text-[10px] text-slate-400 font-light mt-1 text-right">{title.length}/{GOAL_TITLE_MAX_LENGTH}</p>
+      </div>
+
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Ziel-Beschreibung"
+        rows={3}
+        className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-sm resize-none"
+      />
+
+      <div>
+        {linkedIds.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {linkedIds.map(id => {
+              const v = virtues.find(vv => vv.id === id);
+              if (!v) return null;
+              return (
+                <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
+                  {v.name}
+                  <button type="button" onClick={() => removeVirtue(id)} className="hover:text-blue-900">
+                    <X className="w-3 h-3" strokeWidth={2} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="relative">
+          <input
+            type="text"
+            value={virtueQuery}
+            onChange={(e) => setVirtueQuery(e.target.value)}
+            onKeyDown={handleVirtueKeyDown}
+            placeholder="Tugend eingeben, Enter zum Bestätigen"
+            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-sm"
+          />
+          {virtueSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {virtueSuggestions.map(v => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); addVirtue(v); }}
+                  className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+                >
+                  {v.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <button
+        onClick={submit}
+        disabled={!title.trim()}
+        className="text-sm text-blue-600 hover:text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed font-light transition"
+      >
+        Ziel hinzufügen
+      </button>
+    </div>
+  );
+}
+
 export default function YuYuApp() {
   const [section, setSection] = useState('hub');
   const [items, setItems] = useState(() => loadJSON('yuyu-items', []));
@@ -226,7 +353,7 @@ export default function YuYuApp() {
     reader.readAsText(file);
   };
 
-  const addItem = (name, linkedVirtues = []) => {
+  const addItem = (name, linkedVirtues = [], extra = {}) => {
     if (!name || !name.trim()) return;
     if (section === 'principles' && !selectedVirtueGroup) return; // Tugenden nur innerhalb einer Oberkategorie
     const newItem = {
@@ -245,6 +372,8 @@ export default function YuYuApp() {
       newItem.maxExperience = 100;
       if (section === 'goals') {
         newItem.linkedItems = linkedVirtues;
+        newItem.lifeArea = (extra.lifeArea || '').trim();
+        newItem.description = (extra.description || '').trim();
       }
     }
     setItems([...items, newItem]);
@@ -1342,11 +1471,11 @@ export default function YuYuApp() {
         {/* Add new */}
         <div className="mb-8 sm:mb-10 max-w-sm">
           {section === 'goals' ? (
-            <MentionTextInput
-              placeholder={`${currentCategory?.label} (@Tugend zum Verknüpfen)`}
+            <GoalForm
               virtues={allVirtueItems}
-              onSubmit={(text, linkedIds) => addItem(text, linkedIds)}
-              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+              onSubmit={({ lifeArea, title, description, linkedIds }) =>
+                addItem(title, linkedIds, { lifeArea, description })
+              }
             />
           ) : (
             <input
@@ -1486,6 +1615,26 @@ export default function YuYuApp() {
                         </div>
                       )}
                     </div>
+
+                    {section === 'goals' && item.lifeArea && (
+                      <p className="text-xs text-blue-600 font-light mb-1">{item.lifeArea}</p>
+                    )}
+                    {section === 'goals' && item.description && (
+                      <p className="text-xs text-slate-500 font-light mb-2 whitespace-pre-wrap">{item.description}</p>
+                    )}
+                    {section === 'goals' && item.linkedItems?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {item.linkedItems.map(vid => {
+                          const v = allVirtueItems.find(vv => vv.id === vid);
+                          if (!v) return null;
+                          return (
+                            <span key={vid} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] rounded-full">
+                              {v.name}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
