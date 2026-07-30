@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil, ChevronDown } from 'lucide-react';
+import { sb } from './lib/supabase.js';
 
 const MAX_HEARTS = 7;
 const HEART_LOSS_PER_FAIL = 0.25;
@@ -725,7 +726,64 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
   );
 }
 
+// ── Login Screen ──────────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    const { error: err } = await sb.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (err) setError(err.message);
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', padding: '24px' }}>
+      <div style={{ width: '100%', maxWidth: '360px' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: '300', letterSpacing: '4px', textAlign: 'center', marginBottom: '8px', color: '#1e293b' }}>YuYu</h1>
+        <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: '300', marginBottom: '40px' }}>Melde dich mit deinen PIFA-Zugangsdaten an</p>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <input
+            type="email"
+            name="email"
+            autoComplete="email"
+            placeholder="E-Mail"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+            style={{ padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '15px', outline: 'none', background: '#f8fafc', color: '#1e293b' }}
+          />
+          <input
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            placeholder="Passwort"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+            style={{ padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '15px', outline: 'none', background: '#f8fafc', color: '#1e293b' }}
+          />
+          {error && <p style={{ color: '#ef4444', fontSize: '13px', textAlign: 'center' }}>{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            style={{ padding: '12px', borderRadius: '10px', background: '#3b82f6', color: '#fff', border: 'none', fontSize: '15px', fontWeight: '500', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
+          >
+            {loading ? 'Anmelden…' : 'Anmelden'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function YuYuApp() {
+  const [session, setSession] = useState(undefined); // undefined = loading, null = not logged in
   const [section, setSection] = useState('hub');
   const [items, setItems] = useState(() => {
     const saved = loadJSON('yuyu-items', []);
@@ -789,6 +847,64 @@ export default function YuYuApp() {
   const effectiveItemType = section === 'skills' ? skillsTab : section;
   const activeCategory = section === 'skills' ? SKILLS_TABS.find(t => t.id === skillsTab) : currentCategory;
 
+  // ── Supabase Auth ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    sb.auth.getSession().then(({ data: { session: s } }) => setSession(s ?? null));
+    const { data: { subscription } } = sb.auth.onAuthStateChange((_, s) => setSession(s ?? null));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Beim Login: Ziele + Aufgaben aus Supabase laden und lokalen State ersetzen
+  useEffect(() => {
+    if (!session) return;
+    (async () => {
+      const [goalsRes, msRes, todosRes] = await Promise.all([
+        sb.from('yuyu_goals').select('*').eq('user_id', session.user.id).order('created_at'),
+        sb.from('yuyu_goal_milestones').select('*').eq('user_id', session.user.id).order('created_at'),
+        sb.from('yuyu_todos').select('*').eq('user_id', session.user.id).order('created_at'),
+      ]);
+      // Group milestones by goal_id
+      const msMap = {};
+      for (const m of (msRes.data ?? [])) {
+        if (!msMap[m.goal_id]) msMap[m.goal_id] = [];
+        msMap[m.goal_id].push(m);
+      }
+      // Convert Supabase goals → yuyu item format
+      const remoteGoals = (goalsRes.data ?? []).map(g => ({
+        id: g.id,
+        type: 'goals',
+        name: g.title,
+        title: g.title,
+        description: g.description || '',
+        life_area: g.life_area || '',
+        lifeAreaId: null,
+        linkedItems: [],
+        linkedSkillIds: [],
+        milestones: (msMap[g.id] ?? []).map(m => ({ id: m.id, name: m.name, completed: m.completed })),
+        level: 0, experience: 0, maxExperience: 100,
+        completed: g.status === 'achieved',
+        failed: g.status === 'cancelled',
+        createdAt: g.created_at,
+      }));
+      // Replace local goals with Supabase goals, keep non-goal items
+      setItems(prev => [...prev.filter(i => i.type !== 'goals'), ...remoteGoals]);
+      // Convert Supabase todos → yuyu todo format
+      const remoteTodos = (todosRes.data ?? []).map(t => ({
+        id: t.id,
+        text: t.text,
+        completed: t.completed,
+        failed: t.failed,
+        linkedItems: [],
+        linkedSkillIds: [],
+        habit: t.habit || '',
+        lifeAreaId: null,
+        life_area: t.life_area || '',
+        createdAt: t.created_at,
+      }));
+      setTodos(remoteTodos);
+    })();
+  }, [session?.user?.id]);
+
   // Nur noch Speichern läuft über einen Effekt; Laden passiert synchron in den useState-Initializern
   // oben (siehe loadJSON) - sonst gäbe es einen Wettlauf: dieser Effekt liefe beim ersten Mount mit
   // den alten (leeren) State-Werten, bevor ein separater Lade-Effekt seine setState-Aufrufe verarbeitet
@@ -844,9 +960,41 @@ export default function YuYuApp() {
     reader.readAsText(file);
   };
 
-  const addItem = (name, linkedVirtues = [], extra = {}) => {
+  const addItem = async (name, linkedVirtues = [], extra = {}) => {
     if (!name || !name.trim()) return;
-    if (section === 'principles' && !selectedVirtueGroup) return; // Tugenden nur innerhalb einer Oberkategorie
+    if (section === 'principles' && !selectedVirtueGroup) return;
+
+    if (section === 'goals' && session) {
+      const lifeAreaName = extra.lifeAreaId
+        ? allLifeAreaItems.find(a => a.id === extra.lifeAreaId)?.name || null
+        : null;
+      const { data } = await sb.from('yuyu_goals').insert({
+        user_id: session.user.id,
+        title: name.trim(),
+        description: (extra.description || '').trim() || null,
+        life_area: lifeAreaName,
+        status: 'open',
+      }).select().single();
+      if (data) {
+        setItems(prev => [...prev, {
+          id: data.id,
+          type: 'goals',
+          name: data.title,
+          title: data.title,
+          description: data.description || '',
+          life_area: data.life_area || '',
+          lifeAreaId: extra.lifeAreaId || null,
+          linkedItems: linkedVirtues,
+          linkedSkillIds: extra.linkedSkillIds || [],
+          milestones: [],
+          level: 0, experience: 0, maxExperience: 100,
+          completed: false, failed: false,
+          createdAt: data.created_at,
+        }]);
+      }
+      return;
+    }
+
     const newItem = {
       id: Date.now(),
       type: effectiveItemType,
@@ -854,7 +1002,6 @@ export default function YuYuApp() {
       createdAt: new Date().toISOString(),
     };
     if (section === 'principles') {
-      // Tugenden laufen über das Teilpunkte-System (siehe gainVirtuePoint), kein XP/Level mehr
       newItem.points = 0;
       newItem.groupId = selectedVirtueGroup;
     } else {
@@ -873,22 +1020,43 @@ export default function YuYuApp() {
   };
 
   // Meilensteine werden nachträglich zu einem bestehenden Ziel hinzugefügt
-  const addMilestone = (goalId, name) => {
+  const addMilestone = async (goalId, name) => {
     if (!name || !name.trim()) return;
+    if (session) {
+      const { data } = await sb.from('yuyu_goal_milestones').insert({
+        goal_id: goalId, user_id: session.user.id, name: name.trim(),
+      }).select().single();
+      if (data) {
+        setItems(prev => prev.map(i => i.id === goalId
+          ? { ...i, milestones: [...(i.milestones || []), { id: data.id, name: data.name, completed: false }] }
+          : i
+        ));
+      }
+      return;
+    }
     setItems(items.map(i => (i.id === goalId
       ? { ...i, milestones: [...(i.milestones || []), { id: Date.now(), name: name.trim(), completed: false }] }
       : i
     )));
   };
 
-  const toggleMilestone = (goalId, milestoneId) => {
+  const toggleMilestone = async (goalId, milestoneId) => {
+    const goal = items.find(i => i.id === goalId);
+    const ms = (goal?.milestones || []).find(m => m.id === milestoneId);
+    if (!ms) return;
+    if (session) {
+      await sb.from('yuyu_goal_milestones').update({ completed: !ms.completed }).eq('id', milestoneId);
+    }
     setItems(items.map(i => (i.id === goalId
       ? { ...i, milestones: (i.milestones || []).map(m => (m.id === milestoneId ? { ...m, completed: !m.completed } : m)) }
       : i
     )));
   };
 
-  const deleteMilestone = (goalId, milestoneId) => {
+  const deleteMilestone = async (goalId, milestoneId) => {
+    if (session) {
+      await sb.from('yuyu_goal_milestones').delete().eq('id', milestoneId);
+    }
     setItems(items.map(i => (i.id === goalId
       ? { ...i, milestones: (i.milestones || []).filter(m => m.id !== milestoneId) }
       : i
@@ -939,13 +1107,37 @@ export default function YuYuApp() {
     logHeartEvent('gain', label);
   };
 
-  const addTodo = (text, linkedVirtues = [], extra = {}) => {
+  const addTodo = async (text, linkedVirtues = [], extra = {}) => {
     if (!text || !text.trim()) return;
+    const lifeAreaName = extra.lifeAreaId
+      ? allLifeAreaItems.find(a => a.id === extra.lifeAreaId)?.name || null
+      : null;
+    if (session) {
+      const { data } = await sb.from('yuyu_todos').insert({
+        user_id: session.user.id,
+        text: text.trim(),
+        life_area: lifeAreaName,
+        habit: (extra.habit || '').trim() || null,
+      }).select().single();
+      if (data) {
+        setTodos(prev => [...prev, {
+          id: data.id,
+          text: data.text,
+          completed: false, failed: false,
+          linkedItems: linkedVirtues,
+          linkedSkillIds: extra.linkedSkillIds || [],
+          habit: data.habit || '',
+          lifeAreaId: extra.lifeAreaId || null,
+          life_area: data.life_area || '',
+          createdAt: data.created_at,
+        }]);
+      }
+      return;
+    }
     setTodos([...todos, {
       id: Date.now(),
       text: text.trim(),
-      completed: false,
-      failed: false,
+      completed: false, failed: false,
       linkedItems: linkedVirtues,
       linkedSkillIds: extra.linkedSkillIds || [],
       habit: (extra.habit || '').trim(),
@@ -955,9 +1147,12 @@ export default function YuYuApp() {
   };
 
   // Erledigte Aufgabe gibt ein Viertel-Herz zurück (bis maximal MAX_HEARTS)
-  const toggleTodo = (todoId) => {
+  const toggleTodo = async (todoId) => {
     const todo = todos.find(t => t.id === todoId);
     if (!todo || todo.completed) return;
+    if (session) {
+      await sb.from('yuyu_todos').update({ completed: true, updated_at: new Date().toISOString() }).eq('id', todoId);
+    }
     setTodos(todos.map(t => (t.id === todoId ? { ...t, completed: true } : t)));
     gainVirtuePoint(todo.linkedItems || []);
     gainHeart(`Aufgabe erledigt: "${todo.text}"`);
@@ -966,9 +1161,12 @@ export default function YuYuApp() {
   };
 
   // Aufgabe als gescheitert markieren: kostet ein Viertel-Herz
-  const failTodo = (todoId) => {
+  const failTodo = async (todoId) => {
     const todo = todos.find(t => t.id === todoId);
     if (!todo || todo.completed || todo.failed) return;
+    if (session) {
+      await sb.from('yuyu_todos').update({ failed: true, updated_at: new Date().toISOString() }).eq('id', todoId);
+    }
     setTodos(todos.map(t => (t.id === todoId ? { ...t, failed: true } : t)));
     loseHeart(`Aufgabe gescheitert: "${todo.text}"`);
   };
@@ -1016,22 +1214,32 @@ export default function YuYuApp() {
     }));
   };
 
-  const deleteItem = (id) => {
+  const deleteItem = async (id) => {
+    const item = items.find(i => i.id === id);
+    if (item?.type === 'goals' && session) {
+      await sb.from('yuyu_goals').delete().eq('id', id);
+    }
     setItems(items.filter(i => i.id !== id));
   };
 
   // Ziel als gescheitert markieren: kostet ein Viertel-Herz
-  const failItem = (id) => {
+  const failItem = async (id) => {
     const item = items.find(i => i.id === id);
     if (!item || item.failed || item.completed) return;
+    if (item.type === 'goals' && session) {
+      await sb.from('yuyu_goals').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', id);
+    }
     setItems(items.map(i => (i.id === id ? { ...i, failed: true } : i)));
     loseHeart(`Ziel gescheitert: "${item.name}"`);
   };
 
   // Ziel als erfolgreich abgeschlossen markieren: vergibt Teilpunkte an verknüpfte Tugenden
-  const completeItem = (id) => {
+  const completeItem = async (id) => {
     const item = items.find(i => i.id === id);
     if (!item || item.failed || item.completed) return;
+    if (item.type === 'goals' && session) {
+      await sb.from('yuyu_goals').update({ status: 'achieved', updated_at: new Date().toISOString() }).eq('id', id);
+    }
     setItems(prev => prev.map(i => (i.id === id ? { ...i, completed: true } : i)));
     gainVirtuePoint(item.linkedItems || []);
     gainLifeAreaXP(item.lifeAreaId);
@@ -1107,7 +1315,10 @@ export default function YuYuApp() {
     });
   };
 
-  const deleteTodo = (todoId) => {
+  const deleteTodo = async (todoId) => {
+    if (session) {
+      await sb.from('yuyu_todos').delete().eq('id', todoId);
+    }
     setTodos(todos.filter(t => t.id !== todoId));
   };
 
@@ -1290,6 +1501,14 @@ export default function YuYuApp() {
     </div>
   );
 
+  // Auth guard
+  if (session === undefined) {
+    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff' }} />;
+  }
+  if (session === null) {
+    return <LoginScreen />;
+  }
+
   // HUB VIEW
   if (section === 'hub') {
     return (
@@ -1392,7 +1611,7 @@ export default function YuYuApp() {
         {/* Bottom info */}
         <p className="text-slate-400 text-xs font-light tracking-wide mt-4">click a segment to begin</p>
 
-        {/* Backup: alle Daten liegen nur lokal in diesem Browser - Export/Import als manuelle Sicherung */}
+        {/* Backup + Abmelden */}
         <div className="flex items-center gap-4 mt-8">
           <button
             onClick={exportData}
@@ -1417,6 +1636,12 @@ export default function YuYuApp() {
             }}
             className="hidden"
           />
+          <button
+            onClick={() => sb.auth.signOut()}
+            className="text-xs text-slate-400 hover:text-red-500 transition font-light"
+          >
+            Abmelden
+          </button>
         </div>
       </div>
     );
