@@ -5,11 +5,47 @@ import { sb } from './lib/supabase.js';
 const MAX_HEARTS = 7;
 const HEART_LOSS_PER_FAIL = 0.25;
 
+// Level-Formel von PIFA übernommen (dort: computeAttrLevel/xpForLevel in Dashboard.js) - jedes
+// Level braucht kumulativ mehr XP als das vorherige, Cap bei Level 10 ("MAX", wie in PIFA).
+// Gilt einheitlich für alles, was in YuYu levelt: Lebensbereiche, Gewohnheiten, Fähigkeiten, Tugenden.
+const XP_LEVEL_CAP = 10;
+const xpForLevel = (level) => Math.round(100 * Math.pow(1.8, level));
+const computeLevelFromXP = (totalXp) => {
+  let level = 0;
+  let rem = totalXp || 0;
+  while (level < XP_LEVEL_CAP) {
+    const needed = xpForLevel(level);
+    if (rem < needed) break;
+    rem -= needed;
+    level += 1;
+  }
+  return { level, xpInLevel: rem, xpNeeded: level < XP_LEVEL_CAP ? xpForLevel(level) : null };
+};
+
+// Migration: alte Felder (Tugenden: points; Lebensbereiche/Gewohnheiten/Fähigkeiten/Ziele:
+// level+experience+maxExperience) in die neue kumulative xp-Struktur überführen. Rechnet den
+// bisherigen Fortschritt näherungsweise um, statt ihn zu verwerfen (alt: 3 Punkte = 1 Level bei
+// Tugenden bzw. fix 100 XP pro Level bei den anderen Typen - beides war linear, die neue Formel
+// nicht mehr, daher nur eine Näherung auf Basis des bisher investierten Gesamtaufwands).
+const migrateItemXP = (item) => {
+  if (item.xp !== undefined) return item;
+  if (item.type === 'principles') {
+    const { points, ...rest } = item;
+    return { ...rest, xp: Math.round((points || 0) * (100 / 3)) };
+  }
+  if (['life-areas', 'habits', 'skills', 'goals'].includes(item.type)) {
+    const { level, experience, maxExperience: _maxExperience, ...rest } = item;
+    return { ...rest, xp: (level || 0) * 100 + (experience || 0) };
+  }
+  return item;
+};
+
 // Die vier Lebensbereiche sind fest vorgegeben, keine frei anlegbaren Einträge
 const FIXED_LIFE_AREAS = ['Persönlich', 'Familie & Freunde', 'Arbeit', 'Gemeinde'];
 const LIFE_AREA_XP_PER_COMPLETION = 10;
-// Fähigkeiten laufen mit dem gleichen Level-System wie Lebensbereiche (level/experience/maxExperience)
+// Fähigkeiten und Tugenden laufen mit dem gleichen XP-Zuwachs pro Erledigung wie Lebensbereiche
 const SKILL_XP_PER_COMPLETION = 10;
+const VIRTUE_XP_PER_COMPLETION = 10;
 // Pixeliges 8-Bit-Herz: Rastergröße füllen, indem pro Zelle die klassische Herz-Formel
 // (x²+y²-1)³ - x²y³ <= 0 ausgewertet wird - ergibt automatisch die gestufte Pixel-Silhouette.
 const PIXEL_HEART_COLS = 20;
@@ -864,16 +900,14 @@ export default function YuYuApp() {
   const [session, setSession] = useState(undefined); // undefined = loading, null = not logged in
   const [section, setSection] = useState('hub');
   const [items, setItems] = useState(() => {
-    const saved = loadJSON('yuyu-items', []);
+    const saved = loadJSON('yuyu-items', []).map(migrateItemXP);
     if (saved.some(i => i.type === 'life-areas')) return saved;
     // Die vier Lebensbereiche sind feste Einträge, keine vom User angelegten - einmalig seeden
     const seededLifeAreas = FIXED_LIFE_AREAS.map((name, i) => ({
       id: Date.now() + i,
       type: 'life-areas',
       name,
-      level: 0,
-      experience: 0,
-      maxExperience: 100,
+      xp: 0,
       createdAt: new Date().toISOString(),
     }));
     return [...saved, ...seededLifeAreas];
@@ -967,7 +1001,7 @@ export default function YuYuApp() {
         linkedItems: [],
         linkedSkillIds: [],
         milestones: (msMap[g.id] ?? []).map(m => ({ id: m.id, name: m.name, completed: m.completed })),
-        level: 0, experience: 0, maxExperience: 100,
+        xp: 0,
         completed: g.status === 'achieved',
         failed: g.status === 'cancelled',
         createdAt: g.created_at,
@@ -1033,7 +1067,7 @@ export default function YuYuApp() {
       try {
         const data = JSON.parse(e.target.result);
         if (!window.confirm('Vorhandene Daten mit dieser Datei überschreiben?')) return;
-        if (Array.isArray(data.items)) setItems(data.items);
+        if (Array.isArray(data.items)) setItems(data.items.map(migrateItemXP));
         if (Array.isArray(data.todos)) setTodos(data.todos);
         if (Array.isArray(data.virtueGroups)) setVirtueGroups(data.virtueGroups);
         if (typeof data.hearts === 'number') setHearts(data.hearts);
@@ -1073,7 +1107,7 @@ export default function YuYuApp() {
           linkedItems: linkedVirtues,
           linkedSkillIds: extra.linkedSkillIds || [],
           milestones: [],
-          level: 0, experience: 0, maxExperience: 100,
+          xp: 0,
           completed: false, failed: false,
           createdAt: data.created_at,
         }]);
@@ -1085,15 +1119,12 @@ export default function YuYuApp() {
       id: Date.now(),
       type: effectiveItemType,
       name: name.trim(),
+      xp: 0,
       createdAt: new Date().toISOString(),
     };
     if (section === 'principles') {
-      newItem.points = 0;
       newItem.groupId = selectedVirtueGroup;
     } else {
-      newItem.level = 0;
-      newItem.experience = 0;
-      newItem.maxExperience = 100;
       if (section === 'goals') {
         newItem.linkedItems = linkedVirtues;
         newItem.linkedSkillIds = extra.linkedSkillIds || [];
@@ -1240,7 +1271,7 @@ export default function YuYuApp() {
       await sb.from('yuyu_todos').update({ completed: true, updated_at: new Date().toISOString() }).eq('id', todoId);
     }
     setTodos(todos.map(t => (t.id === todoId ? { ...t, completed: true } : t)));
-    gainVirtuePoint(todo.linkedItems || []);
+    gainVirtueXP(todo.linkedItems || []);
     gainHeart(`Aufgabe erledigt: "${todo.text}"`);
     gainLifeAreaXP(todo.lifeAreaId);
     gainSkillXP(todo.linkedSkillIds || []);
@@ -1257,31 +1288,22 @@ export default function YuYuApp() {
     loseHeart(`Aufgabe gescheitert: "${todo.text}"`);
   };
 
-  // Teilpunkte für Tugenden: jede verknüpfte Tugend bekommt bei Erledigung einen vollen Punkt, 3 Teilpunkte = 1 Level
+  // Tugenden sammeln XP durch verknüpfte Ziele/Aufgaben - gleiche Formel wie alle anderen Typen.
   // Nutzt eine funktionale Aktualisierung, da sie oft direkt nach einem anderen setItems-Aufruf
   // im selben Handler läuft (z.B. in completeItem) - sonst würde der zweite Aufruf mit einem
   // veralteten items-Snapshot den ersten überschreiben.
-  const gainVirtuePoint = (virtueIds) => {
+  const gainVirtueXP = (virtueIds) => {
     if (virtueIds.length === 0) return;
     setItems(prev => prev.map(item =>
-      virtueIds.includes(item.id) ? { ...item, points: (item.points || 0) + 1 } : item
+      virtueIds.includes(item.id) ? { ...item, xp: (item.xp || 0) + VIRTUE_XP_PER_COMPLETION } : item
     ));
   };
 
-  // Lebensbereich sammelt XP durch Beteiligung an Zielen/Aufgaben; bei vollem Balken steigt das Level
+  // Lebensbereich sammelt XP durch Beteiligung an Zielen/Aufgaben; Level wird aus der kumulierten
+  // xp per computeLevelFromXP abgeleitet, nicht mehr separat mitgeführt.
   const gainLifeAreaXP = (lifeAreaId) => {
     if (!lifeAreaId) return;
-    setItems(prev => prev.map(i => {
-      if (i.id !== lifeAreaId) return i;
-      const maxExperience = i.maxExperience || 100;
-      let experience = (i.experience || 0) + LIFE_AREA_XP_PER_COMPLETION;
-      let level = i.level || 0;
-      while (experience >= maxExperience) {
-        experience -= maxExperience;
-        level += 1;
-      }
-      return { ...i, experience, level };
-    }));
+    setItems(prev => prev.map(i => (i.id === lifeAreaId ? { ...i, xp: (i.xp || 0) + LIFE_AREA_XP_PER_COMPLETION } : i)));
   };
 
   // Job + Arbeitgeber für den Lebensbereich "Arbeit": Arbeitgeber kommt aus der kuratierten
@@ -1322,17 +1344,7 @@ export default function YuYuApp() {
   // Fähigkeiten sammeln XP durch verknüpfte Ziele/Aufgaben - gleiches Level-System wie Lebensbereiche
   const gainSkillXP = (skillIds) => {
     if (!skillIds || skillIds.length === 0) return;
-    setItems(prev => prev.map(i => {
-      if (!skillIds.includes(i.id)) return i;
-      const maxExperience = i.maxExperience || 100;
-      let experience = (i.experience || 0) + SKILL_XP_PER_COMPLETION;
-      let level = i.level || 0;
-      while (experience >= maxExperience) {
-        experience -= maxExperience;
-        level += 1;
-      }
-      return { ...i, experience, level };
-    }));
+    setItems(prev => prev.map(i => (skillIds.includes(i.id) ? { ...i, xp: (i.xp || 0) + SKILL_XP_PER_COMPLETION } : i)));
   };
 
   const deleteItem = async (id) => {
@@ -1354,7 +1366,7 @@ export default function YuYuApp() {
     loseHeart(`Ziel gescheitert: "${item.name}"`);
   };
 
-  // Ziel als erfolgreich abgeschlossen markieren: vergibt Teilpunkte an verknüpfte Tugenden
+  // Ziel als erfolgreich abgeschlossen markieren: vergibt XP an verknüpfte Tugenden
   const completeItem = async (id) => {
     const item = items.find(i => i.id === id);
     if (!item || item.failed || item.completed) return;
@@ -1362,7 +1374,7 @@ export default function YuYuApp() {
       await sb.from('yuyu_goals').update({ status: 'achieved', updated_at: new Date().toISOString() }).eq('id', id);
     }
     setItems(prev => prev.map(i => (i.id === id ? { ...i, completed: true } : i)));
-    gainVirtuePoint(item.linkedItems || []);
+    gainVirtueXP(item.linkedItems || []);
     gainLifeAreaXP(item.lifeAreaId);
     gainSkillXP(item.linkedSkillIds || []);
   };
@@ -1996,8 +2008,8 @@ export default function YuYuApp() {
                             const x = 10 + colIdx * pieceWidth;
                             const y = 10 + rowIdx * pieceHeight;
                             const groupItems = items.filter(i => i.type === 'principles' && i.groupId === group.id);
-                            const groupPoints = groupItems.reduce((sum, i) => sum + (i.points || 0), 0);
-                            const groupLevel = Math.floor(groupPoints / 3);
+                            const groupXP = groupItems.reduce((sum, i) => sum + (i.xp || 0), 0);
+                            const groupLevel = computeLevelFromXP(groupXP).level;
                             const isEditingGroup = editingVirtueGroupId === group.id;
                             const isOpen = selectedVirtueGroup === group.id;
 
@@ -2154,7 +2166,7 @@ export default function YuYuApp() {
                                               fontWeight="600"
                                               fontFamily="'Lora', serif"
                                             >
-                                              Lv. {Math.floor((item.points || 0) / 3)}
+                                              Lv. {computeLevelFromXP(item.xp || 0).level}
                                             </text>
                                             {item.createdAt && (
                                               <text
@@ -2307,19 +2319,26 @@ export default function YuYuApp() {
                                     )}
                                   </div>
 
-                                  <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-xs text-slate-400">Level</span>
-                                      <span className="text-sm font-light text-blue-600">{Math.floor((item.points || 0) / 3)}</span>
-                                    </div>
-                                    <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                                      <div
-                                        className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
-                                        style={{ width: `${(((item.points || 0) % 3) / 3) * 100}%` }}
-                                      />
-                                    </div>
-                                    <p className="text-xs text-slate-400 text-right">{item.points || 0} Teilpunkte</p>
-                                  </div>
+                                  {(() => {
+                                    const { level, xpInLevel, xpNeeded } = computeLevelFromXP(item.xp || 0);
+                                    return (
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-xs text-slate-400">Level</span>
+                                          <span className="text-sm font-light text-blue-600">{level}{xpNeeded === null ? ' (MAX)' : ''}</span>
+                                        </div>
+                                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                                          <div
+                                            className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
+                                            style={{ width: `${xpNeeded ? (xpInLevel / xpNeeded) * 100 : 100}%` }}
+                                          />
+                                        </div>
+                                        <p className="text-xs text-slate-400 text-right">
+                                          {xpNeeded ? `${xpInLevel}/${xpNeeded} XP` : `${item.xp || 0} XP`}
+                                        </p>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             ))}
@@ -2388,7 +2407,8 @@ export default function YuYuApp() {
     if (openArea) {
       const linkedGoals = items.filter(i => i.type === 'goals' && i.lifeAreaId === openArea.id);
       const linkedTodos = todos.filter(t => t.lifeAreaId === openArea.id);
-      const pct = Math.min(100, ((openArea.experience || 0) / (openArea.maxExperience || 100)) * 100);
+      const { level: areaLevel, xpInLevel: areaXpInLevel, xpNeeded: areaXpNeeded } = computeLevelFromXP(openArea.xp || 0);
+      const pct = areaXpNeeded ? (areaXpInLevel / areaXpNeeded) * 100 : 100;
       return (
         <div className="min-h-screen bg-white p-4 sm:p-8">
           <div className="max-w-2xl mx-auto">
@@ -2411,8 +2431,10 @@ export default function YuYuApp() {
 
             <div className="max-w-sm mb-8">
               <div className="flex justify-between items-center mb-1">
-                <span className="text-xs text-slate-400">Level {openArea.level || 0}</span>
-                <span className="text-xs text-slate-400">{openArea.experience || 0}/{openArea.maxExperience || 100} XP</span>
+                <span className="text-xs text-slate-400">Level {areaLevel}{areaXpNeeded === null ? ' (MAX)' : ''}</span>
+                <span className="text-xs text-slate-400">
+                  {areaXpNeeded ? `${areaXpInLevel}/${areaXpNeeded} XP` : `${openArea.xp || 0} XP`}
+                </span>
               </div>
               <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                 <div
@@ -2608,7 +2630,7 @@ export default function YuYuApp() {
                       opacity="0.85"
                       pointerEvents="none"
                     >
-                      Lv. {area?.level || 0}
+                      Lv. {computeLevelFromXP(area?.xp || 0).level}
                     </text>
                   </g>
                 );
@@ -2852,19 +2874,26 @@ export default function YuYuApp() {
                       />
                     )}
 
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-slate-400">Level</span>
-                        <span className="text-sm font-light text-blue-600">{item.level}</span>
-                      </div>
-                      <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
-                          style={{ width: `${(item.experience / item.maxExperience) * 100}%` }}
-                        />
-                      </div>
-                      <p className="text-xs text-slate-400 text-right">{item.experience}/{item.maxExperience}</p>
-                    </div>
+                    {(() => {
+                      const { level, xpInLevel, xpNeeded } = computeLevelFromXP(item.xp || 0);
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-slate-400">Level</span>
+                            <span className="text-sm font-light text-blue-600">{level}{xpNeeded === null ? ' (MAX)' : ''}</span>
+                          </div>
+                          <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
+                              style={{ width: `${xpNeeded ? (xpInLevel / xpNeeded) * 100 : 100}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-slate-400 text-right">
+                            {xpNeeded ? `${xpInLevel}/${xpNeeded} XP` : `${item.xp || 0} XP`}
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               ))}
