@@ -1303,23 +1303,19 @@ export default function YuYuApp() {
   // Account) bereits ein vollständiges Profil existiert - dessen Vorhandensein IST die Verknüpfung.
   const confirmEmployerLink = async () => {
     const employer = employers.find(e => e.id === employerLink?.employer_id);
-    if (!employer?.linkable || !employer.link_url) return;
+    if (!employer?.linkable) return;
     setEmployerLinkMessage('Prüfe Verknüpfung…');
     try {
-      const { data: { session: s } } = await sb.auth.getSession();
-      const res = await fetch(`${employer.link_url}/api/user/profile`, {
-        headers: { Authorization: `Bearer ${s.access_token}` },
-      });
-      const body = await res.json();
-      if (body?.user?.username) {
+      const { data: profile } = await sb.from('profiles').select('name').eq('id', session.user.id).maybeSingle();
+      if (profile?.name) {
         await sb.from('user_employer_links').update({ linked: true }).eq('user_id', session.user.id);
         setEmployerLink(prev => ({ ...prev, linked: true }));
         setEmployerLinkMessage('');
       } else {
-        setEmployerLinkMessage(`Noch kein ${employer.name}-Konto gefunden - bitte zuerst dort registrieren.`);
+        setEmployerLinkMessage(`Noch kein ${employer.name}-Konto gefunden – bitte zuerst dort registrieren.`);
       }
     } catch {
-      setEmployerLinkMessage('Verknüpfung konnte nicht geprüft werden - versuch es später erneut.');
+      setEmployerLinkMessage('Verknüpfung konnte nicht geprüft werden – versuch es später erneut.');
     }
   };
 
