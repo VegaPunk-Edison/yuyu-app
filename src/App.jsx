@@ -726,6 +726,84 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
   );
 }
 
+// ── Job + Arbeitgeber ────────────────────────────────────────────────────────
+// Zwei-Stufen-Wizard wie GoalForm/TodoWizardInput: erst Job-Titel (Freitext), dann Arbeitgeber -
+// aber als feste Liste von Buttons statt Freitext-Autocomplete, da der Arbeitgeber nur aus der
+// kuratierten Supabase-Tabelle "employers" kommen darf.
+function JobEmployerForm({ employers, initialJobTitle, initialEmployerId, onSubmit, onCancel }) {
+  const [stage, setStage] = useState('jobtitle');
+  const [jobTitle, setJobTitle] = useState(initialJobTitle || '');
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (stage === 'jobtitle') inputRef.current?.focus();
+  }, [stage]);
+
+  const handleKeyDown = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (!jobTitle.trim()) return;
+    setStage('employer');
+  };
+
+  const chooseEmployer = (employerId) => {
+    onSubmit(jobTitle.trim(), employerId);
+  };
+
+  return (
+    <div className="max-w-sm">
+      {stage === 'jobtitle' ? (
+        <input
+          ref={inputRef}
+          type="text"
+          value={jobTitle}
+          onChange={(e) => setJobTitle(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Aktueller Job, z.B. eSport"
+          className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+        />
+      ) : (
+        <div>
+          <p className="text-sm text-slate-900 mb-3">{jobTitle}</p>
+          <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Arbeitgeber (optional)</p>
+          <div className="space-y-1">
+            {employers.map(employer => (
+              <button
+                key={employer.id}
+                type="button"
+                onClick={() => chooseEmployer(employer.id)}
+                className={`block w-full text-left px-3 py-2 text-sm rounded-lg border transition ${
+                  employer.id === initialEmployerId
+                    ? 'border-blue-300 text-blue-700 bg-blue-50'
+                    : 'border-slate-200 text-slate-700 hover:bg-blue-50'
+                }`}
+              >
+                {employer.name}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => chooseEmployer(null)}
+              className="block w-full text-left px-3 py-2 text-sm text-slate-400 hover:text-blue-600 transition"
+            >
+              Kein Arbeitgeber
+            </button>
+          </div>
+        </div>
+      )}
+      {onCancel && (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="mt-3 text-xs text-slate-400 hover:text-blue-600 font-light transition"
+        >
+          Abbrechen
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Login Screen ──────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState('');
@@ -827,6 +905,10 @@ export default function YuYuApp() {
   const [penaltyTaskDraft, setPenaltyTaskDraft] = useState('');
   const [selectedLifeAreaId, setSelectedLifeAreaId] = useState(null);
   const [skillsTab, setSkillsTab] = useState('habits');
+  const [employers, setEmployers] = useState([]);
+  const [employerLink, setEmployerLink] = useState(null);
+  const [editingEmployerLink, setEditingEmployerLink] = useState(false);
+  const [employerLinkMessage, setEmployerLinkMessage] = useState('');
   const importFileInputRef = useRef(null);
 
   const categories = [
@@ -858,11 +940,15 @@ export default function YuYuApp() {
   useEffect(() => {
     if (!session) return;
     (async () => {
-      const [goalsRes, msRes, todosRes] = await Promise.all([
+      const [goalsRes, msRes, todosRes, employersRes, employerLinkRes] = await Promise.all([
         sb.from('yuyu_goals').select('*').eq('user_id', session.user.id).order('created_at'),
         sb.from('yuyu_goal_milestones').select('*').eq('user_id', session.user.id).order('created_at'),
         sb.from('yuyu_todos').select('*').eq('user_id', session.user.id).order('created_at'),
+        sb.from('employers').select('*'),
+        sb.from('user_employer_links').select('*').eq('user_id', session.user.id).maybeSingle(),
       ]);
+      setEmployers(employersRes.data ?? []);
+      setEmployerLink(employerLinkRes.data ?? null);
       // Group milestones by goal_id
       const msMap = {};
       for (const m of (msRes.data ?? [])) {
@@ -1196,6 +1282,45 @@ export default function YuYuApp() {
       }
       return { ...i, experience, level };
     }));
+  };
+
+  // Job + Arbeitgeber für den Lebensbereich "Arbeit": Arbeitgeber kommt aus der kuratierten
+  // Supabase-Tabelle "employers", nicht aus Freitext. Ein neu gewählter Arbeitgeber startet
+  // immer unverknüpft (linked: false) - die Verknüpfung muss über confirmEmployerLink bestätigt werden.
+  const upsertEmployerLink = async (jobTitle, employerId) => {
+    if (!session) return;
+    const { data } = await sb.from('user_employer_links').upsert({
+      user_id: session.user.id,
+      job_title: jobTitle.trim(),
+      employer_id: employerId || null,
+      linked: false,
+    }).select().single();
+    if (data) setEmployerLink(data);
+    setEmployerLinkMessage('');
+  };
+
+  // Prüft über den bestehenden PIFA-Profil-Endpoint, ob für diesen Nutzer (gleicher Supabase-Auth-
+  // Account) bereits ein vollständiges Profil existiert - dessen Vorhandensein IST die Verknüpfung.
+  const confirmEmployerLink = async () => {
+    const employer = employers.find(e => e.id === employerLink?.employer_id);
+    if (!employer?.linkable || !employer.link_url) return;
+    setEmployerLinkMessage('Prüfe Verknüpfung…');
+    try {
+      const { data: { session: s } } = await sb.auth.getSession();
+      const res = await fetch(`${employer.link_url}/api/user/profile`, {
+        headers: { Authorization: `Bearer ${s.access_token}` },
+      });
+      const body = await res.json();
+      if (body?.user?.username) {
+        await sb.from('user_employer_links').update({ linked: true }).eq('user_id', session.user.id);
+        setEmployerLink(prev => ({ ...prev, linked: true }));
+        setEmployerLinkMessage('');
+      } else {
+        setEmployerLinkMessage(`Noch kein ${employer.name}-Konto gefunden - bitte zuerst dort registrieren.`);
+      }
+    } catch {
+      setEmployerLinkMessage('Verknüpfung konnte nicht geprüft werden - versuch es später erneut.');
+    }
   };
 
   // Fähigkeiten sammeln XP durch verknüpfte Ziele/Aufgaben - gleiches Level-System wie Lebensbereiche
@@ -2273,7 +2398,11 @@ export default function YuYuApp() {
           <div className="max-w-2xl mx-auto">
             <div className="flex items-start gap-3 sm:gap-6 mb-6 pb-4 sm:mb-12 sm:pb-8 border-b border-slate-200">
               <button
-                onClick={() => setSelectedLifeAreaId(null)}
+                onClick={() => {
+                  setSelectedLifeAreaId(null);
+                  setEditingEmployerLink(false);
+                  setEmployerLinkMessage('');
+                }}
                 className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
               >
                 <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
@@ -2296,6 +2425,73 @@ export default function YuYuApp() {
                 />
               </div>
             </div>
+
+            {openArea.name === 'Arbeit' && (
+              <div className="max-w-sm mb-8 pb-8 border-b border-slate-100">
+                {(!employerLink?.job_title || editingEmployerLink) ? (
+                  <JobEmployerForm
+                    employers={employers}
+                    initialJobTitle={employerLink?.job_title}
+                    initialEmployerId={employerLink?.employer_id}
+                    onSubmit={(jobTitle, employerId) => {
+                      upsertEmployerLink(jobTitle, employerId);
+                      setEditingEmployerLink(false);
+                    }}
+                    onCancel={employerLink?.job_title ? () => setEditingEmployerLink(false) : undefined}
+                  />
+                ) : (() => {
+                  const employer = employers.find(e => e.id === employerLink.employer_id);
+                  return (
+                    <div>
+                      <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Job</p>
+                      <p className="text-sm text-slate-900 mb-1">{employerLink.job_title}</p>
+                      <p className="text-xs text-slate-400 font-light mb-3">
+                        {employer ? employer.name : 'Kein Arbeitgeber angegeben'}
+                      </p>
+
+                      {employer?.linkable && !employerLink.linked && (
+                        <div className="mb-3 p-3 bg-slate-50 rounded-lg space-y-2">
+                          <p className="text-xs text-slate-500">
+                            Verknüpfe dein Konto mit {employer.name}, um Daten auszutauschen.
+                          </p>
+                          <div className="flex flex-wrap gap-3">
+                            <button
+                              type="button"
+                              onClick={() => window.open(employer.link_url, '_blank', 'noopener')}
+                              className="text-xs text-blue-600 hover:text-blue-700 font-light"
+                            >
+                              Bei {employer.name} registrieren/einloggen
+                            </button>
+                            <button
+                              type="button"
+                              onClick={confirmEmployerLink}
+                              className="text-xs text-blue-600 hover:text-blue-700 font-light"
+                            >
+                              Verknüpfung bestätigen
+                            </button>
+                          </div>
+                          {employerLinkMessage && (
+                            <p className="text-xs text-orange-500">{employerLinkMessage}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {employer?.linkable && employerLink.linked && (
+                        <p className="text-xs text-green-600 mb-3">Verknüpft ✓</p>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setEditingEmployerLink(true)}
+                        className="text-xs text-slate-400 hover:text-blue-600 font-light transition"
+                      >
+                        Bearbeiten
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             {(linkedGoals.length > 0 || linkedTodos.length > 0) ? (
               <div className="max-w-md space-y-4">
