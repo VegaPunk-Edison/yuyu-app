@@ -127,7 +127,9 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
   const [stage, setStage] = useState('lifearea');
   const [value, setValue] = useState('');
   const [lifeArea, setLifeArea] = useState(null);
+  const [learningGoal, setLearningGoal] = useState('');
   const [title, setTitle] = useState('');
+  const [problem, setProblem] = useState('');
   const [description, setDescription] = useState('');
   const [linkedIds, setLinkedIds] = useState([]);
   const [linkedSkillIds, setLinkedSkillIds] = useState([]);
@@ -168,31 +170,45 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
     setStage('lifearea');
     setValue('');
     setLifeArea(null);
+    setLearningGoal('');
     setTitle('');
+    setProblem('');
     setDescription('');
     setLinkedIds([]);
     setLinkedSkillIds([]);
   };
 
   const save = () => {
-    if (!title.trim() || !description.trim()) return;
-    onSubmit({ lifeAreaId: lifeArea?.id || null, title, description, linkedIds, linkedSkillIds });
+    if (!learningGoal.trim() || !title.trim() || !problem.trim() || !description.trim()) return;
+    onSubmit({ lifeAreaId: lifeArea?.id || null, learningGoal, title, problem, description, linkedIds, linkedSkillIds });
     reset();
   };
 
   // Eine Stufe zurück - z.B. um eine Antwort zu korrigieren; die vorherige Eingabe landet
   // wieder editierbar im Feld, ihr bestätigter Wert wird dafür aus der Zusammenfassung entfernt.
   const goBack = () => {
-    if (stage === 'title') {
+    if (stage === 'learning') {
       setValue(lifeArea?.name || '');
       setLifeArea(null);
       setStage('lifearea');
       return;
     }
-    if (stage === 'outcome') {
+    if (stage === 'title') {
+      setValue(learningGoal);
+      setLearningGoal('');
+      setStage('learning');
+      return;
+    }
+    if (stage === 'problem') {
       setValue(title);
       setTitle('');
       setStage('title');
+      return;
+    }
+    if (stage === 'outcome') {
+      setValue(problem);
+      setProblem('');
+      setStage('problem');
       return;
     }
     if (stage === 'virtue') {
@@ -223,6 +239,14 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
         : lifeAreas.find(a => a.name.toLowerCase() === value.trim().toLowerCase());
       if (match) setLifeArea(match);
       setValue('');
+      setStage('learning');
+      return;
+    }
+
+    if (stage === 'learning') {
+      if (!value.trim()) return;
+      setLearningGoal(value.trim());
+      setValue('');
       setStage('title');
       return;
     }
@@ -230,6 +254,14 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
     if (stage === 'title') {
       if (!value.trim()) return;
       setTitle(value.trim());
+      setValue('');
+      setStage('problem');
+      return;
+    }
+
+    if (stage === 'problem') {
+      if (!value.trim()) return;
+      setProblem(value.trim());
       setValue('');
       setStage('outcome');
       return;
@@ -273,18 +305,22 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
 
   const placeholders = {
     lifearea: 'Welchem Lebensbereich zuordnen? (optional)',
-    title: 'Was ist das Ziel?',
-    outcome: 'Gewünschtes Ergebnis - wie sieht es aus, wenn du es erreicht hast?',
+    learning: 'Was muss ich lernen?',
+    title: 'Was muss getan werden?',
+    problem: 'Welches Problem löst du?',
+    outcome: 'Was ist dein gewünschter Ausgang?',
     virtue: 'Tugend eingeben (mehrere möglich), Enter zum Bestätigen',
     skill: 'Fähigkeit eingeben (mehrere möglich), Enter zum Bestätigen',
   };
 
   return (
     <div>
-      {(lifeArea || title || description) && (
+      {(lifeArea || learningGoal || title || problem || description) && (
         <div className="mb-2 space-y-0.5">
           {lifeArea && <p className="text-xs text-blue-600 font-light">{lifeArea.name}</p>}
+          {learningGoal && <p className="text-xs text-slate-500 font-light">{learningGoal}</p>}
           {title && <p className="text-sm text-slate-900">{title}</p>}
+          {problem && <p className="text-xs text-slate-500 font-light">{problem}</p>}
           {description && <p className="text-xs text-slate-500 font-light">{description}</p>}
         </div>
       )}
@@ -329,13 +365,13 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
             placeholder={placeholders.title}
             className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
           />
-        ) : stage === 'outcome' ? (
+        ) : stage === 'learning' || stage === 'problem' || stage === 'outcome' ? (
           <textarea
             ref={inputRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={placeholders.outcome}
+            placeholder={placeholders[stage]}
             rows={2}
             className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-sm resize-none"
           />
@@ -356,7 +392,7 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
               <button
                 key={a.id}
                 type="button"
-                onMouseDown={(e) => { e.preventDefault(); setLifeArea(a); setValue(''); setStage('title'); }}
+                onMouseDown={(e) => { e.preventDefault(); setLifeArea(a); setValue(''); setStage('learning'); }}
                 className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
               >
                 {a.name}
@@ -996,6 +1032,8 @@ export default function YuYuApp() {
         name: g.title,
         title: g.title,
         description: g.description || '',
+        learningGoal: g.learning_goal || '',
+        problem: g.problem || '',
         life_area: g.life_area || '',
         lifeAreaId: null,
         linkedItems: [],
@@ -1092,6 +1130,8 @@ export default function YuYuApp() {
         user_id: session.user.id,
         title: name.trim(),
         description: (extra.description || '').trim() || null,
+        learning_goal: (extra.learningGoal || '').trim() || null,
+        problem: (extra.problem || '').trim() || null,
         life_area: lifeAreaName,
         status: 'open',
       }).select().single();
@@ -1102,6 +1142,8 @@ export default function YuYuApp() {
           name: data.title,
           title: data.title,
           description: data.description || '',
+          learningGoal: data.learning_goal || '',
+          problem: data.problem || '',
           life_area: data.life_area || '',
           lifeAreaId: extra.lifeAreaId || null,
           linkedItems: linkedVirtues,
@@ -1130,6 +1172,8 @@ export default function YuYuApp() {
         newItem.linkedSkillIds = extra.linkedSkillIds || [];
         newItem.lifeAreaId = extra.lifeAreaId || null;
         newItem.description = (extra.description || '').trim();
+        newItem.learningGoal = (extra.learningGoal || '').trim();
+        newItem.problem = (extra.problem || '').trim();
         newItem.milestones = [];
       }
     }
@@ -2693,8 +2737,8 @@ export default function YuYuApp() {
               virtues={allVirtueItems}
               skills={allSkillItems}
               lifeAreas={allLifeAreaItems}
-              onSubmit={({ lifeAreaId, title, description, linkedIds, linkedSkillIds }) =>
-                addItem(title, linkedIds, { lifeAreaId, description, linkedSkillIds })
+              onSubmit={({ lifeAreaId, learningGoal, title, problem, description, linkedIds, linkedSkillIds }) =>
+                addItem(title, linkedIds, { lifeAreaId, learningGoal, description, problem, linkedSkillIds })
               }
             />
           ) : (
@@ -2839,8 +2883,20 @@ export default function YuYuApp() {
                     {section === 'goals' && allLifeAreaItems.find(a => a.id === item.lifeAreaId) && (
                       <p className="text-xs text-blue-600 font-light mb-1">{allLifeAreaItems.find(a => a.id === item.lifeAreaId).name}</p>
                     )}
+                    {section === 'goals' && item.learningGoal && (
+                      <p className="text-xs text-slate-500 font-light mb-1 whitespace-pre-wrap">
+                        <span className="text-slate-400 uppercase tracking-wide text-[10px] mr-1">Lernen</span>{item.learningGoal}
+                      </p>
+                    )}
+                    {section === 'goals' && item.problem && (
+                      <p className="text-xs text-slate-500 font-light mb-1 whitespace-pre-wrap">
+                        <span className="text-slate-400 uppercase tracking-wide text-[10px] mr-1">Problem</span>{item.problem}
+                      </p>
+                    )}
                     {section === 'goals' && item.description && (
-                      <p className="text-xs text-slate-500 font-light mb-2 whitespace-pre-wrap">{item.description}</p>
+                      <p className="text-xs text-slate-500 font-light mb-2 whitespace-pre-wrap">
+                        <span className="text-slate-400 uppercase tracking-wide text-[10px] mr-1">Ausgang</span>{item.description}
+                      </p>
                     )}
                     {section === 'goals' && (item.linkedItems?.length > 0 || item.linkedSkillIds?.length > 0) && (
                       <div className="flex flex-wrap gap-1 mb-2">
