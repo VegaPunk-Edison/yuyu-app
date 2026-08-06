@@ -2643,9 +2643,9 @@ export default function YuYuApp() {
 
         <div className="relative w-[min(80vw,300px)] h-[min(80vw,300px)] sm:w-[320px] sm:h-[320px]">
           {[
-            { type: 'principles', label: 'Tugend', levelLabel: 'Gesamtlevel', position: 'left-1/2 top-0 -translate-x-1/2' },
-            { type: 'habits', label: 'Gewohnheiten', levelLabel: 'Gesamtlevel', position: 'left-0 bottom-0' },
-            { type: 'skills', label: 'Fähigkeiten', levelLabel: 'Bildungslevel', position: 'right-0 bottom-0' },
+            { type: 'principles', label: 'Tugend', levelLabel: 'Lvl', position: 'left-1/2 top-0 -translate-x-1/2' },
+            { type: 'habits', label: 'Gewohnheiten', levelLabel: 'Lvl', position: 'left-0 bottom-0' },
+            { type: 'skills', label: 'Fähigkeiten', levelLabel: 'Lvl', position: 'right-0 bottom-0' },
           ].map(({ type, label, levelLabel, position }) => {
             const totalXP = items.filter(i => i.type === type).reduce((sum, i) => sum + (i.xp || 0), 0);
             const level = computeLevelFromXP(totalXP).level;
@@ -2862,7 +2862,7 @@ export default function YuYuApp() {
             </div>
           </div>
 
-          {renderGroupedSection('principles', 'Tugend', 'Tugenden', 'Gesamtlevel')}
+          {renderGroupedSection('principles', 'Tugend', 'Tugenden', 'Lvl')}
         </div>
       </div>
     );
@@ -2918,9 +2918,9 @@ export default function YuYuApp() {
             {openArea.name === 'Persönlich' && (
               <div className="max-w-sm mb-8 pb-8 border-b border-slate-100 space-y-5">
                 {[
-                  { type: 'principles', label: 'Tugenden', levelLabel: 'Gesamtlevel' },
-                  { type: 'habits', label: 'Gewohnheiten', levelLabel: 'Gesamtlevel' },
-                  { type: 'skills', label: 'Fähigkeiten', levelLabel: 'Bildungslevel' },
+                  { type: 'principles', label: 'Tugenden', levelLabel: 'Lvl' },
+                  { type: 'habits', label: 'Gewohnheiten', levelLabel: 'Lvl' },
+                  { type: 'skills', label: 'Fähigkeiten', levelLabel: 'Lvl' },
                 ].map(({ type, label, levelLabel }) => {
                   const groups = itemGroups.filter(g => g.type === type);
                   if (groups.length === 0) return null;
@@ -3218,7 +3218,7 @@ export default function YuYuApp() {
             skillsTab,
             activeCategory?.label,
             activeCategory?.labelPlural,
-            skillsTab === 'skills' ? 'Bildungslevel' : 'Gesamtlevel'
+            'Lvl'
           )
         ) : (
         <>
