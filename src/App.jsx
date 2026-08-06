@@ -1198,6 +1198,7 @@ export default function YuYuApp() {
           ).select();
           if (groupsError) {
             console.error('Migration der Oberkategorien fehlgeschlagen, wird beim nächsten Login erneut versucht:', groupsError);
+            window.alert('Deine lokal gespeicherten Tugenden/Gewohnheiten/Fähigkeiten konnten nicht mit deinem Account synchronisiert werden. Der Versuch wird beim nächsten Login wiederholt, bitte melde dich falls das öfter passiert.');
           } else {
             // Über (type, name) statt Array-Index zuordnen - PostgREST garantiert keine Reihenfolge.
             const groupIdMap = {};
@@ -1211,10 +1212,24 @@ export default function YuYuApp() {
                 user_id: session.user.id, type: i.type, group_id: groupIdMap[i.groupId],
                 name: i.name, xp: i.xp || 0, sort_order: idx,
               }));
+            // Fehlende Zuordnung (groupIdMap-Miss) ODER ein fehlgeschlagener Insert dürfen NIE als
+            // "erledigt" markiert werden - sonst geht genau der Rest der Daten unwiderruflich verloren,
+            // ohne dass ein erneuter Versuch beim nächsten Login noch stattfindet (das ist vermutlich
+            // exakt das, was hier zum Datenverlust geführt hat: der Insert-Fehler wurde nie geprüft).
+            const unmatchedCount = localItems.length - itemsToInsert.length;
+            let insertError = null;
             if (itemsToInsert.length > 0) {
-              await sb.from('growth_items').insert(itemsToInsert);
+              ({ error: insertError } = await sb.from('growth_items').insert(itemsToInsert));
             }
-            localStorage.setItem(migrationFlagKey, 'true');
+            if (insertError) {
+              console.error('Migration der Items fehlgeschlagen, wird beim nächsten Login erneut versucht:', insertError);
+              window.alert('Deine lokal gespeicherten Tugenden/Gewohnheiten/Fähigkeiten konnten nicht mit deinem Account synchronisiert werden. Der Versuch wird beim nächsten Login wiederholt, bitte melde dich falls das öfter passiert.');
+            } else {
+              if (unmatchedCount > 0) {
+                console.error(`Migration: ${unmatchedCount} Item(s) konnten keiner migrierten Oberkategorie zugeordnet werden und wurden übersprungen.`);
+              }
+              localStorage.setItem(migrationFlagKey, 'true');
+            }
           }
         }
       }
