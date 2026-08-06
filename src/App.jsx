@@ -123,7 +123,7 @@ const GOAL_TITLE_MAX_LENGTH = 60;
 // -> Titel (Pflicht, zeichenbegrenzt) -> gewünschtes Ergebnis (Pflicht) -> Tugend(en, mehrfach
 // möglich, optional). Jede Antwort wird oben als Zusammenfassung angezeigt; am Ende bestätigt
 // ein "Speichern"-Klick oder leeres Enter auf der letzten Stufe das Ziel auf einmal.
-function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
+function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, onCreateSkill, onSubmit }) {
   const [stage, setStage] = useState('lifearea');
   const [value, setValue] = useState('');
   const [lifeArea, setLifeArea] = useState(null);
@@ -133,6 +133,7 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
   const [description, setDescription] = useState('');
   const [linkedIds, setLinkedIds] = useState([]);
   const [linkedSkillIds, setLinkedSkillIds] = useState([]);
+  const [pendingVirtueName, setPendingVirtueName] = useState('');
   const inputRef = useRef(null);
 
   // Fokus wandert mit, damit man ohne erneutes Antippen weiterschreiben kann
@@ -140,16 +141,22 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
     inputRef.current?.focus();
   }, [stage]);
 
-  const lifeAreaSuggestions = stage === 'lifearea' && value
+  // Zeigt Vorschläge als durchsuchbares Dropdown, sobald die Stufe aktiv ist - auch ohne
+  // Texteingabe (zum Durchklicken), gefiltert sobald getippt wird.
+  const lifeAreaSuggestions = stage === 'lifearea'
     ? lifeAreas.filter(a => a.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5)
     : [];
 
-  const virtueSuggestions = stage === 'virtue' && value
+  const virtueSuggestions = stage === 'virtue'
     ? virtues.filter(v => v.name.toLowerCase().includes(value.toLowerCase()) && !linkedIds.includes(v.id)).slice(0, 5)
     : [];
 
-  const skillSuggestions = stage === 'skill' && value
+  const skillSuggestions = stage === 'skill'
     ? skills.filter(s => s.name.toLowerCase().includes(value.toLowerCase()) && !linkedSkillIds.includes(s.id)).slice(0, 5)
+    : [];
+
+  const virtueGroupSuggestions = stage === 'virtue-group'
+    ? virtueGroups.filter(g => g.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5)
     : [];
 
   const addVirtue = (virtue) => {
@@ -178,10 +185,12 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
     setLinkedSkillIds([]);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!learningGoal.trim() || !title.trim() || !problem.trim() || !description.trim()) return;
-    onSubmit({ lifeAreaId: lifeArea?.id || null, learningGoal, title, problem, description, linkedIds, linkedSkillIds });
-    reset();
+    // Formular nur bei tatsächlichem Erfolg zurücksetzen - schlägt das Speichern fehl (z.B.
+    // Supabase-Fehler), bleiben die eingegebenen Antworten erhalten statt kommentarlos zu verschwinden.
+    const ok = await onSubmit({ lifeAreaId: lifeArea?.id || null, learningGoal, title, problem, description, linkedIds, linkedSkillIds });
+    if (ok !== false) reset();
   };
 
   // Eine Stufe zurück - z.B. um eine Antwort zu korrigieren; die vorherige Eingabe landet
@@ -217,6 +226,12 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
       setStage('outcome');
       return;
     }
+    if (stage === 'virtue-group') {
+      setValue(pendingVirtueName);
+      setPendingVirtueName('');
+      setStage('virtue');
+      return;
+    }
     if (stage === 'skill') {
       setValue('');
       setStage('virtue');
@@ -234,10 +249,14 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
     e.preventDefault();
 
     if (stage === 'lifearea') {
-      const match = lifeAreaSuggestions.length > 0
-        ? lifeAreaSuggestions[0]
-        : lifeAreas.find(a => a.name.toLowerCase() === value.trim().toLowerCase());
-      if (match) setLifeArea(match);
+      // Ohne Texteingabe ist die Stufe optional übersprungen - leeres Enter darf NICHT den ersten
+      // Dropdown-Eintrag auswählen, sonst ließe sich der Lebensbereich nie leer lassen.
+      if (value.trim()) {
+        const match = lifeAreaSuggestions.length > 0
+          ? lifeAreaSuggestions[0]
+          : lifeAreas.find(a => a.name.toLowerCase() === value.trim().toLowerCase());
+        if (match) setLifeArea(match);
+      }
       setValue('');
       setStage('learning');
       return;
@@ -276,13 +295,23 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
     }
 
     if (stage === 'virtue') {
-      if (virtueSuggestions.length > 0) {
+      // Leeres Enter (Dropdown nur zum Durchklicken sichtbar) darf nicht automatisch den ersten
+      // Eintrag verknüpfen, sonst käme man mit leerem Feld nie zur nächsten Stufe.
+      if (value.trim() && virtueSuggestions.length > 0) {
         addVirtue(virtueSuggestions[0]);
         return;
       }
-      const match = virtues.find(v => v.name.toLowerCase() === value.trim().toLowerCase());
+      const match = value.trim() && virtues.find(v => v.name.toLowerCase() === value.trim().toLowerCase());
       if (match) {
         addVirtue(match);
+        return;
+      }
+      // Kein Treffer, aber ein getippter Name: Tugend gibt es noch nicht - da sie zwingend
+      // einer Oberkategorie angehören muss, erst dort auswählen/anlegen statt sie zu verwerfen.
+      if (value.trim()) {
+        setPendingVirtueName(value.trim());
+        setValue('');
+        setStage('virtue-group');
         return;
       }
       setValue('');
@@ -290,14 +319,36 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
       return;
     }
 
-    // stage === 'skill'
-    if (skillSuggestions.length > 0) {
+    if (stage === 'virtue-group') {
+      const matchGroup = virtueGroups.find(g => g.name.toLowerCase() === value.trim().toLowerCase());
+      if (!matchGroup && !value.trim()) return; // Oberkategorie ist hier Pflicht, kein leeres Überspringen
+      const newVirtue = matchGroup
+        ? onCreateVirtue(pendingVirtueName, matchGroup.id, null)
+        : onCreateVirtue(pendingVirtueName, null, value.trim());
+      if (newVirtue) addVirtue(newVirtue);
+      setPendingVirtueName('');
+      setValue('');
+      setStage('virtue');
+      return;
+    }
+
+    // stage === 'skill' - leeres Enter darf nicht automatisch den ersten Dropdown-Eintrag
+    // verknüpfen, sonst könnte man diese Stufe mit leerem Feld nie zum Speichern verlassen.
+    if (value.trim() && skillSuggestions.length > 0) {
       addSkill(skillSuggestions[0]);
       return;
     }
-    const match = skills.find(s => s.name.toLowerCase() === value.trim().toLowerCase());
-    if (match) {
-      addSkill(match);
+    const skillMatch = value.trim() && skills.find(s => s.name.toLowerCase() === value.trim().toLowerCase());
+    if (skillMatch) {
+      addSkill(skillMatch);
+      return;
+    }
+    // Kein Treffer, aber ein getippter Name: Fähigkeit direkt anlegen (keine Gruppenpflicht wie
+    // bei Tugenden) und verknüpfen, dann auf der Stufe bleiben um ggf. weitere hinzuzufügen.
+    if (value.trim()) {
+      const newSkill = onCreateSkill(value.trim());
+      if (newSkill) addSkill(newSkill);
+      setValue('');
       return;
     }
     save();
@@ -310,6 +361,7 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
     problem: 'Welches Problem löst du?',
     outcome: 'Was ist dein gewünschter Ausgang?',
     virtue: 'Tugend eingeben (mehrere möglich), Enter zum Bestätigen',
+    'virtue-group': 'In welcher Oberkategorie? (vorhandene wählen oder neue eingeben)',
     skill: 'Fähigkeit eingeben (mehrere möglich), Enter zum Bestätigen',
   };
 
@@ -428,7 +480,34 @@ function GoalForm({ virtues, skills, lifeAreas, onSubmit }) {
             ))}
           </div>
         )}
+        {stage === 'virtue-group' && virtueGroupSuggestions.length > 0 && (
+          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+            {virtueGroupSuggestions.map(g => (
+              <button
+                key={g.id}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  const newVirtue = onCreateVirtue(pendingVirtueName, g.id, null);
+                  if (newVirtue) addVirtue(newVirtue);
+                  setPendingVirtueName('');
+                  setValue('');
+                  setStage('virtue');
+                }}
+                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      {stage === 'virtue-group' && (
+        <p className="text-[10px] text-slate-400 font-light mt-1">
+          Neue Tugend "{pendingVirtueName}" - vorhandene Oberkategorie wählen oder Namen für eine neue eingeben
+        </p>
+      )}
 
       {stage === 'title' && <p className="text-[10px] text-slate-400 font-light mt-1 text-right">{value.length}/{GOAL_TITLE_MAX_LENGTH}</p>}
 
@@ -1139,7 +1218,7 @@ export default function YuYuApp() {
       const lifeAreaName = extra.lifeAreaId
         ? allLifeAreaItems.find(a => a.id === extra.lifeAreaId)?.name || null
         : null;
-      const { data } = await sb.from('yuyu_goals').insert({
+      const { data, error } = await sb.from('yuyu_goals').insert({
         user_id: session.user.id,
         title: name.trim(),
         description: (extra.description || '').trim() || null,
@@ -1148,6 +1227,10 @@ export default function YuYuApp() {
         life_area: lifeAreaName,
         status: 'open',
       }).select().single();
+      if (error) {
+        window.alert(`Ziel konnte nicht gespeichert werden: ${error.message}`);
+        return false;
+      }
       if (data) {
         setItems(prev => [...prev, {
           id: data.id,
@@ -1167,7 +1250,7 @@ export default function YuYuApp() {
           createdAt: data.created_at,
         }]);
       }
-      return;
+      return true;
     }
 
     const newItem = {
@@ -1191,6 +1274,7 @@ export default function YuYuApp() {
       }
     }
     setItems([...items, newItem]);
+    return true;
   };
 
   // Meilensteine werden nachträglich zu einem bestehenden Ziel hinzugefügt
@@ -1251,6 +1335,32 @@ export default function YuYuApp() {
   const renameVirtueGroup = (id, newName) => {
     if (!newName.trim()) return;
     setVirtueGroups(virtueGroups.map(g => (g.id === id ? { ...g, name: newName } : g)));
+  };
+
+  // Spontanes Anlegen einer Tugend aus dem Ziel-Formular heraus (@Mention-artig): Tugenden
+  // brauchen zwingend eine Oberkategorie, daher entweder eine vorhandene per id verwenden oder
+  // per newGroupName eine neue anlegen - genau eins von beiden muss gesetzt sein.
+  const createAndLinkVirtue = (name, groupId, newGroupName) => {
+    if (!name.trim()) return null;
+    let targetGroupId = groupId;
+    if (!targetGroupId && newGroupName?.trim()) {
+      const newGroup = { id: Date.now(), name: newGroupName.trim(), createdAt: new Date().toISOString() };
+      setVirtueGroups(prev => [...prev, newGroup]);
+      targetGroupId = newGroup.id;
+    }
+    if (!targetGroupId) return null;
+    const newVirtue = { id: Date.now() + 1, type: 'principles', name: name.trim(), xp: 0, groupId: targetGroupId, createdAt: new Date().toISOString() };
+    setItems(prev => [...prev, newVirtue]);
+    return newVirtue;
+  };
+
+  // Spontanes Anlegen einer Fähigkeit aus dem Ziel-Formular heraus - keine Gruppenpflicht wie bei
+  // Tugenden, daher ohne Zwischenschritt direkt anlegbar.
+  const createAndLinkSkill = (name) => {
+    if (!name.trim()) return null;
+    const newSkill = { id: Date.now(), type: 'skills', name: name.trim(), xp: 0, createdAt: new Date().toISOString() };
+    setItems(prev => [...prev, newSkill]);
+    return newSkill;
   };
 
   const deleteVirtueGroup = (id) => {
@@ -2750,6 +2860,9 @@ export default function YuYuApp() {
               virtues={allVirtueItems}
               skills={allSkillItems}
               lifeAreas={allLifeAreaItems}
+              virtueGroups={virtueGroups}
+              onCreateVirtue={createAndLinkVirtue}
+              onCreateSkill={createAndLinkSkill}
               onSubmit={({ lifeAreaId, learningGoal, title, problem, description, linkedIds, linkedSkillIds }) =>
                 addItem(title, linkedIds, { lifeAreaId, learningGoal, description, problem, linkedSkillIds })
               }
