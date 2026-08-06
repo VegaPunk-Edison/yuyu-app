@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil, ChevronDown } from 'lucide-react';
+import { Trash2, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil, ChevronDown, Clipboard } from 'lucide-react';
 import { sb, setRememberMe } from './lib/supabase.js';
 
 const MAX_HEARTS = 7;
@@ -2523,6 +2523,17 @@ export default function YuYuApp() {
   if (section === 'hub') {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4 sm:p-6">
+        {/* Link zur PIFA-Website - eigene App, aber selbe Zugangsdaten/Konto */}
+        <a
+          href="https://pifa-esports.store/dashboard"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Zu PIFA"
+          className="fixed top-4 right-4 sm:top-6 sm:right-6 p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+        >
+          <Clipboard className="w-5 h-5" strokeWidth={1.5} />
+        </a>
+
         <div className="mb-10 sm:mb-16 text-center">
           <h1 className="text-5xl sm:text-6xl font-light text-slate-900 tracking-tight mb-2">
             YuYu
