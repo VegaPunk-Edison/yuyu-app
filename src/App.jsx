@@ -2391,23 +2391,23 @@ export default function YuYuApp() {
               );
             })}
 
-            {/* Center circle - clickable für Prinzipien, gesperrt bei 0 Herzen */}
+            {/* Center circle - führt zur YOU-Auswahl (Tugend/Gewohnheiten/Fähigkeiten), gesperrt bei 0 Herzen */}
             <circle
               cx="250" cy="250" r="140"
               fill="white" stroke="#7c9fd6" strokeWidth="1.5"
-              onClick={() => { if (hearts <= 0) return; setSelectedVirtueGroup(null); setSection('principles'); }}
+              onClick={() => { if (hearts <= 0) return; setSelectedGroupId(null); setSection('you'); }}
               className={`transition ${hearts <= 0 ? 'cursor-not-allowed' : 'cursor-pointer hover:fill-slate-50'}`}
             />
             <circle
               cx="250" cy="250" r="135"
               fill={hearts <= 0 ? '#e2e8f0' : '#f8fafc'}
-              onClick={() => { if (hearts <= 0) return; setSelectedVirtueGroup(null); setSection('principles'); }}
+              onClick={() => { if (hearts <= 0) return; setSelectedGroupId(null); setSection('you'); }}
               className={`transition ${hearts <= 0 ? 'cursor-not-allowed' : 'cursor-pointer hover:fill-slate-50'}`}
             />
 
             {/* Center text - schwarz */}
             <text x="250" y="245" textAnchor="middle" dy="0.3em" fill="#000000" fontSize="14" fontWeight="300" pointerEvents="none" letterSpacing="2">
-              Tugend
+              YOU
             </text>
 
             {/* Labels - reine Anzeige, Klick passiert auf dem Segment darunter */}
@@ -2456,6 +2456,62 @@ export default function YuYuApp() {
             Abmelden
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // YOU VIEW: Dreieck-Auswahl zwischen Tugend, Gewohnheiten und Fähigkeiten
+  if (section === 'you') {
+    const goTo = (type) => {
+      setSelectedGroupId(null);
+      setSelectionMode(false);
+      setSelectedIds([]);
+      setReorderMode(false);
+      if (type === 'principles') {
+        setSection('principles');
+      } else {
+        setSection('skills');
+        setSkillsTab(type);
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-xs mb-10 sm:mb-16 flex items-center gap-3">
+          <button
+            onClick={() => setSection('hub')}
+            className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
+          >
+            <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
+          </button>
+          <h1 className="text-2xl sm:text-3xl font-light text-slate-900 tracking-tight">YOU</h1>
+        </div>
+
+        <div className="relative w-[min(80vw,300px)] h-[min(80vw,300px)] sm:w-[320px] sm:h-[320px]">
+          <button
+            type="button"
+            onClick={() => goTo('principles')}
+            className="absolute left-1/2 top-0 -translate-x-1/2 w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-white border border-[#7c9fd6] flex items-center justify-center text-center px-2 text-sm font-light tracking-wide text-slate-900 transition hover:bg-slate-50 hover:fill-slate-50"
+          >
+            Tugend
+          </button>
+          <button
+            type="button"
+            onClick={() => goTo('habits')}
+            className="absolute left-0 bottom-0 w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-white border border-[#7c9fd6] flex items-center justify-center text-center px-2 text-sm font-light tracking-wide text-slate-900 transition hover:bg-slate-50"
+          >
+            Gewohnheiten
+          </button>
+          <button
+            type="button"
+            onClick={() => goTo('skills')}
+            className="absolute right-0 bottom-0 w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-white border border-[#7c9fd6] flex items-center justify-center text-center px-2 text-sm font-light tracking-wide text-slate-900 transition hover:bg-slate-50"
+          >
+            Fähigkeiten
+          </button>
+        </div>
+
+        <p className="text-slate-400 text-xs font-light tracking-wide mt-8">click a corner to begin</p>
       </div>
     );
   }
