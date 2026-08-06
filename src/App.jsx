@@ -2488,27 +2488,25 @@ export default function YuYuApp() {
         </div>
 
         <div className="relative w-[min(80vw,300px)] h-[min(80vw,300px)] sm:w-[320px] sm:h-[320px]">
-          <button
-            type="button"
-            onClick={() => goTo('principles')}
-            className="absolute left-1/2 top-0 -translate-x-1/2 w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-white border border-[#7c9fd6] flex items-center justify-center text-center px-2 text-sm font-light tracking-wide text-slate-900 transition hover:bg-slate-50 hover:fill-slate-50"
-          >
-            Tugend
-          </button>
-          <button
-            type="button"
-            onClick={() => goTo('habits')}
-            className="absolute left-0 bottom-0 w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-white border border-[#7c9fd6] flex items-center justify-center text-center px-2 text-sm font-light tracking-wide text-slate-900 transition hover:bg-slate-50"
-          >
-            Gewohnheiten
-          </button>
-          <button
-            type="button"
-            onClick={() => goTo('skills')}
-            className="absolute right-0 bottom-0 w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-white border border-[#7c9fd6] flex items-center justify-center text-center px-2 text-sm font-light tracking-wide text-slate-900 transition hover:bg-slate-50"
-          >
-            Fähigkeiten
-          </button>
+          {[
+            { type: 'principles', label: 'Tugend', position: 'left-1/2 top-0 -translate-x-1/2' },
+            { type: 'habits', label: 'Gewohnheiten', position: 'left-0 bottom-0' },
+            { type: 'skills', label: 'Fähigkeiten', position: 'right-0 bottom-0' },
+          ].map(({ type, label, position }) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => goTo(type)}
+              className={`absolute ${position} w-28 h-28 sm:w-32 sm:h-32 transition hover:opacity-70`}
+            >
+              <svg viewBox="0 0 100 100" className="w-full h-full">
+                <polygon points="50,4 97,92 3,92" fill="white" stroke="#7c9fd6" strokeWidth="1.5" />
+              </svg>
+              <span className="absolute inset-x-0 bottom-3 sm:bottom-4 text-center text-[10px] sm:text-xs font-light tracking-wide text-slate-900 px-2">
+                {label}
+              </span>
+            </button>
+          ))}
         </div>
 
         <p className="text-slate-400 text-xs font-light tracking-wide mt-8">click a corner to begin</p>
