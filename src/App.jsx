@@ -1074,7 +1074,7 @@ function LoginScreen({ onLogin }) {
 
 export default function YuYuApp() {
   const [session, setSession] = useState(undefined); // undefined = loading, null = not logged in
-  const [section, setSection] = useState('hub');
+  const [section, setSection] = useState(() => loadJSON('yuyu-section', 'hub'));
   const [items, setItems] = useState(() => {
     const saved = loadJSON('yuyu-items', []).map(migrateItemXP);
     if (saved.some(i => i.type === 'life-areas')) return saved;
@@ -1323,7 +1323,7 @@ export default function YuYuApp() {
   // hätte, und würde die gerade geladenen/migrierten Daten wieder mit leeren Arrays überschreiben.
   useEffect(() => {
     saveData();
-  }, [items, todos, itemGroups, hearts, heartLog, penaltyTask]);
+  }, [items, todos, itemGroups, hearts, heartLog, penaltyTask, section]);
 
   // Bei 0 Herzen ist nur noch der Aufgaben-Bereich zugänglich (Strafaufgabe muss zuerst erledigt werden)
   useEffect(() => {
@@ -1339,6 +1339,7 @@ export default function YuYuApp() {
     localStorage.setItem('yuyu-hearts', JSON.stringify(hearts));
     localStorage.setItem('yuyu-heart-log', JSON.stringify(heartLog));
     localStorage.setItem('yuyu-penalty-task', JSON.stringify(penaltyTask));
+    localStorage.setItem('yuyu-section', JSON.stringify(section));
   };
 
   // Backup: alle Daten als JSON-Datei herunterladen, da nichts außerhalb dieses Browsers gespeichert wird
