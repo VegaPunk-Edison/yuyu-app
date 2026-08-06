@@ -134,12 +134,14 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
   const [linkedIds, setLinkedIds] = useState([]);
   const [linkedSkillIds, setLinkedSkillIds] = useState([]);
   const [pendingVirtueName, setPendingVirtueName] = useState('');
+  const [creatingNewGroup, setCreatingNewGroup] = useState(false);
   const inputRef = useRef(null);
 
-  // Fokus wandert mit, damit man ohne erneutes Antippen weiterschreiben kann
+  // Fokus wandert mit, damit man ohne erneutes Antippen weiterschreiben kann - auch wenn sich
+  // innerhalb der virtue-group-Stufe zwischen Liste und "neue Oberkategorie"-Eingabe umschaltet.
   useEffect(() => {
     inputRef.current?.focus();
-  }, [stage]);
+  }, [stage, creatingNewGroup]);
 
   // Zeigt Vorschläge als durchsuchbares Dropdown, sobald die Stufe aktiv ist - auch ohne
   // Texteingabe (zum Durchklicken), gefiltert sobald getippt wird.
@@ -153,10 +155,6 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
 
   const skillSuggestions = stage === 'skill'
     ? skills.filter(s => s.name.toLowerCase().includes(value.toLowerCase()) && !linkedSkillIds.includes(s.id)).slice(0, 5)
-    : [];
-
-  const virtueGroupSuggestions = stage === 'virtue-group'
-    ? virtueGroups.filter(g => g.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5)
     : [];
 
   const addVirtue = (virtue) => {
@@ -173,6 +171,19 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
 
   const removeSkill = (id) => setLinkedSkillIds(prev => prev.filter(i => i !== id));
 
+  // Oberkategorie für eine spontan angelegte Tugend festlegen - entweder eine vorhandene per id
+  // (Klick aus der Liste) oder eine neue mit diesem Namen (aus dem "+ Neue Oberkategorie"-Feld).
+  const pickVirtueGroup = (groupId, newGroupName) => {
+    const newVirtue = groupId
+      ? onCreateVirtue(pendingVirtueName, groupId, null)
+      : onCreateVirtue(pendingVirtueName, null, newGroupName);
+    if (newVirtue) addVirtue(newVirtue);
+    setPendingVirtueName('');
+    setValue('');
+    setCreatingNewGroup(false);
+    setStage('virtue');
+  };
+
   const reset = () => {
     setStage('lifearea');
     setValue('');
@@ -183,6 +194,8 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
     setDescription('');
     setLinkedIds([]);
     setLinkedSkillIds([]);
+    setPendingVirtueName('');
+    setCreatingNewGroup(false);
   };
 
   const save = async () => {
@@ -227,6 +240,11 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
       return;
     }
     if (stage === 'virtue-group') {
+      if (creatingNewGroup) {
+        setCreatingNewGroup(false);
+        setValue('');
+        return;
+      }
       setValue(pendingVirtueName);
       setPendingVirtueName('');
       setStage('virtue');
@@ -320,15 +338,9 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
     }
 
     if (stage === 'virtue-group') {
-      const matchGroup = virtueGroups.find(g => g.name.toLowerCase() === value.trim().toLowerCase());
-      if (!matchGroup && !value.trim()) return; // Oberkategorie ist hier Pflicht, kein leeres Überspringen
-      const newVirtue = matchGroup
-        ? onCreateVirtue(pendingVirtueName, matchGroup.id, null)
-        : onCreateVirtue(pendingVirtueName, null, value.trim());
-      if (newVirtue) addVirtue(newVirtue);
-      setPendingVirtueName('');
-      setValue('');
-      setStage('virtue');
+      // Nur die "+ Neue Oberkategorie"-Eingabe ist ein Textfeld - vorhandene werden per Klick
+      // aus der Liste gewählt (pickVirtueGroup), nicht getippt.
+      if (creatingNewGroup && value.trim()) pickVirtueGroup(null, value.trim());
       return;
     }
 
@@ -361,7 +373,7 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
     problem: 'Welches Problem löst du?',
     outcome: 'Was ist dein gewünschter Ausgang?',
     virtue: 'Tugend eingeben (mehrere möglich), Enter zum Bestätigen',
-    'virtue-group': 'In welcher Oberkategorie? (vorhandene wählen oder neue eingeben)',
+    'virtue-group': 'Name der neuen Oberkategorie',
     skill: 'Fähigkeit eingeben (mehrere möglich), Enter zum Bestätigen',
   };
 
@@ -405,108 +417,120 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
         </div>
       )}
 
-      <div className="relative">
-        {stage === 'title' ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={value}
-            onChange={(e) => setValue(e.target.value.slice(0, GOAL_TITLE_MAX_LENGTH))}
-            onKeyDown={handleKeyDown}
-            maxLength={GOAL_TITLE_MAX_LENGTH}
-            placeholder={placeholders.title}
-            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
-          />
-        ) : stage === 'learning' || stage === 'problem' || stage === 'outcome' ? (
-          <textarea
-            ref={inputRef}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholders[stage]}
-            rows={2}
-            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-sm resize-none"
-          />
-        ) : (
-          <input
-            ref={inputRef}
-            type="text"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholders[stage]}
-            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
-          />
-        )}
-        {stage === 'lifearea' && lifeAreaSuggestions.length > 0 && (
-          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
-            {lifeAreaSuggestions.map(a => (
+      {stage === 'virtue-group' ? (
+        <div>
+          <p className="text-xs text-slate-500 font-light mb-2">
+            Neue Tugend "{pendingVirtueName}" - Oberkategorie wählen:
+          </p>
+          {!creatingNewGroup ? (
+            <div className="space-y-1.5">
+              {virtueGroups.map(g => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => pickVirtueGroup(g.id, null)}
+                  className="block w-full text-left px-3 py-2 text-sm rounded-lg border border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50 transition"
+                >
+                  {g.name}
+                </button>
+              ))}
               <button
-                key={a.id}
                 type="button"
-                onMouseDown={(e) => { e.preventDefault(); setLifeArea(a); setValue(''); setStage('learning'); }}
-                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+                onClick={() => setCreatingNewGroup(true)}
+                className="block w-full text-left px-3 py-2 text-sm text-blue-600 hover:text-blue-700 font-light transition"
               >
-                {a.name}
+                + Neue Oberkategorie
               </button>
-            ))}
-          </div>
-        )}
-        {stage === 'virtue' && virtueSuggestions.length > 0 && (
-          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
-            {virtueSuggestions.map(v => (
-              <button
-                key={v.id}
-                type="button"
-                onMouseDown={(e) => { e.preventDefault(); addVirtue(v); }}
-                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
-              >
-                {v.name}
-              </button>
-            ))}
-          </div>
-        )}
-        {stage === 'skill' && skillSuggestions.length > 0 && (
-          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
-            {skillSuggestions.map(s => (
-              <button
-                key={s.id}
-                type="button"
-                onMouseDown={(e) => { e.preventDefault(); addSkill(s); }}
-                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
-              >
-                {s.name}
-              </button>
-            ))}
-          </div>
-        )}
-        {stage === 'virtue-group' && virtueGroupSuggestions.length > 0 && (
-          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
-            {virtueGroupSuggestions.map(g => (
-              <button
-                key={g.id}
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  const newVirtue = onCreateVirtue(pendingVirtueName, g.id, null);
-                  if (newVirtue) addVirtue(newVirtue);
-                  setPendingVirtueName('');
-                  setValue('');
-                  setStage('virtue');
-                }}
-                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
-              >
-                {g.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {stage === 'virtue-group' && (
-        <p className="text-[10px] text-slate-400 font-light mt-1">
-          Neue Tugend "{pendingVirtueName}" - vorhandene Oberkategorie wählen oder Namen für eine neue eingeben
-        </p>
+            </div>
+          ) : (
+            <input
+              ref={inputRef}
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={placeholders['virtue-group']}
+              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+            />
+          )}
+        </div>
+      ) : (
+        <div className="relative">
+          {stage === 'title' ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value.slice(0, GOAL_TITLE_MAX_LENGTH))}
+              onKeyDown={handleKeyDown}
+              maxLength={GOAL_TITLE_MAX_LENGTH}
+              placeholder={placeholders.title}
+              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+            />
+          ) : stage === 'learning' || stage === 'problem' || stage === 'outcome' ? (
+            <textarea
+              ref={inputRef}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={placeholders[stage]}
+              rows={2}
+              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-sm resize-none"
+            />
+          ) : (
+            <input
+              ref={inputRef}
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={placeholders[stage]}
+              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+            />
+          )}
+          {stage === 'lifearea' && lifeAreaSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {lifeAreaSuggestions.map(a => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); setLifeArea(a); setValue(''); setStage('learning'); }}
+                  className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+                >
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {stage === 'virtue' && virtueSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {virtueSuggestions.map(v => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); addVirtue(v); }}
+                  className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+                >
+                  {v.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {stage === 'skill' && skillSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {skillSuggestions.map(s => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); addSkill(s); }}
+                  className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {stage === 'title' && <p className="text-[10px] text-slate-400 font-light mt-1 text-right">{value.length}/{GOAL_TITLE_MAX_LENGTH}</p>}
