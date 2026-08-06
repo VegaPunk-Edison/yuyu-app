@@ -17,7 +17,7 @@ DECLARE
   v_group_coachnika uuid;
   v_group_pac uuid;
 BEGIN
-  SELECT id INTO v_user_id FROM auth.users WHERE email = 'elevateesport.1@gmail.com';
+  SELECT id INTO v_user_id FROM auth.users WHERE email = 'silbernes@icloud.com';
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'Kein auth.users-Eintrag mit dieser E-Mail gefunden - bitte E-Mail oben im Skript korrigieren.';
   END IF;
