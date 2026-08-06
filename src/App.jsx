@@ -188,17 +188,17 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
   // Oberkategorie für eine spontan angelegte Tugend/Fähigkeit festlegen - entweder eine vorhandene
   // per id (Klick aus der Liste) oder eine neue mit diesem Namen (aus dem "+ Neue Oberkategorie"-
   // Feld). Welcher Typ gemeint ist, ergibt sich aus der aktuellen Stufe (virtue-group/skill-group).
-  const pickGroup = (groupId, newGroupName) => {
+  const pickGroup = async (groupId, newGroupName) => {
     if (stage === 'virtue-group') {
       const newVirtue = groupId
-        ? onCreateVirtue(pendingGroupItemName, groupId, null)
-        : onCreateVirtue(pendingGroupItemName, null, newGroupName);
+        ? await onCreateVirtue(pendingGroupItemName, groupId, null)
+        : await onCreateVirtue(pendingGroupItemName, null, newGroupName);
       if (newVirtue) addVirtue(newVirtue);
       setStage('virtue');
     } else {
       const newSkill = groupId
-        ? onCreateSkill(pendingGroupItemName, groupId, null)
-        : onCreateSkill(pendingGroupItemName, null, newGroupName);
+        ? await onCreateSkill(pendingGroupItemName, groupId, null)
+        : await onCreateSkill(pendingGroupItemName, null, newGroupName);
       if (newSkill) addSkill(newSkill);
       setStage('skill');
     }
@@ -1168,19 +1168,72 @@ export default function YuYuApp() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Beim Login: Ziele + Aufgaben aus Supabase laden und lokalen State ersetzen
+  // Beim Login: Ziele + Aufgaben aus Supabase laden und lokalen State ersetzen. Tugenden/
+  // Gewohnheiten/Fähigkeiten (growth_items/growth_item_groups) sind die gemeinsame Datenbasis mit
+  // PIFA - beim allerersten Login nach diesem Update werden bisher nur lokal gespeicherte Einträge
+  // einmalig hochgeladen (Flag pro User, nicht "ist Remote leer?", damit ein Nutzer der serverseitig
+  // bewusst alles gelöscht hat nicht bei jedem Login sein altes lokales Backup erneut hochlädt).
   useEffect(() => {
     if (!session) return;
     (async () => {
-      const [goalsRes, msRes, todosRes, employersRes, employerLinkRes] = await Promise.all([
+      const migrationFlagKey = `yuyu-growth-migrated-${session.user.id}`;
+      if (localStorage.getItem(migrationFlagKey) !== 'true') {
+        const localGroups = loadJSON('yuyu-virtue-groups', []).map(g => (g.type ? g : { ...g, type: 'principles' }));
+        const localItems = loadJSON('yuyu-items', []).map(migrateItemXP).filter(i => GROUPED_TYPES.includes(i.type));
+        if (localGroups.length === 0 && localItems.length === 0) {
+          localStorage.setItem(migrationFlagKey, 'true');
+        } else {
+          // Nach (type, name) deduplizieren, sonst würde ein Bulk-Insert mit Duplikaten am
+          // UNIQUE(user_id, type, name)-Constraint scheitern. upsert statt insert macht den ganzen
+          // Block außerdem retry-sicher, falls ein vorheriger Versuch schon Gruppen angelegt hat.
+          const uniqueGroups = [];
+          const seen = new Set();
+          for (const g of localGroups) {
+            const key = `${g.type}::${g.name}`;
+            if (!seen.has(key)) { seen.add(key); uniqueGroups.push(g); }
+          }
+          const { data: upsertedGroups, error: groupsError } = await sb.from('growth_item_groups').upsert(
+            uniqueGroups.map(g => ({ user_id: session.user.id, type: g.type, name: g.name })),
+            { onConflict: 'user_id,type,name' }
+          ).select();
+          if (groupsError) {
+            console.error('Migration der Oberkategorien fehlgeschlagen, wird beim nächsten Login erneut versucht:', groupsError);
+          } else {
+            // Über (type, name) statt Array-Index zuordnen - PostgREST garantiert keine Reihenfolge.
+            const groupIdMap = {};
+            for (const local of localGroups) {
+              const match = (upsertedGroups ?? []).find(row => row.type === local.type && row.name === local.name);
+              if (match) groupIdMap[local.id] = match.id;
+            }
+            const itemsToInsert = localItems
+              .filter(i => groupIdMap[i.groupId])
+              .map((i, idx) => ({
+                user_id: session.user.id, type: i.type, group_id: groupIdMap[i.groupId],
+                name: i.name, xp: i.xp || 0, sort_order: idx,
+              }));
+            if (itemsToInsert.length > 0) {
+              await sb.from('growth_items').insert(itemsToInsert);
+            }
+            localStorage.setItem(migrationFlagKey, 'true');
+          }
+        }
+      }
+
+      const [goalsRes, msRes, todosRes, employersRes, employerLinkRes, growthItemsRes, growthGroupsRes] = await Promise.all([
         sb.from('yuyu_goals').select('*').eq('user_id', session.user.id).order('created_at'),
         sb.from('yuyu_goal_milestones').select('*').eq('user_id', session.user.id).order('created_at'),
         sb.from('yuyu_todos').select('*').eq('user_id', session.user.id).order('created_at'),
         sb.from('employers').select('*'),
         sb.from('user_employer_links').select('*').eq('user_id', session.user.id).maybeSingle(),
+        sb.from('growth_items').select('*').eq('user_id', session.user.id).order('sort_order'),
+        sb.from('growth_item_groups').select('*').eq('user_id', session.user.id).order('created_at'),
       ]);
       setEmployers(employersRes.data ?? []);
       setEmployerLink(employerLinkRes.data ?? null);
+      setItemGroups(growthGroupsRes.data ?? []);
+      const remoteGrowthItems = (growthItemsRes.data ?? []).map(i => ({
+        id: i.id, type: i.type, name: i.name, xp: i.xp, groupId: i.group_id, createdAt: i.created_at,
+      }));
       // Group milestones by goal_id
       const msMap = {};
       for (const m of (msRes.data ?? [])) {
@@ -1206,8 +1259,13 @@ export default function YuYuApp() {
         failed: g.status === 'cancelled',
         createdAt: g.created_at,
       }));
-      // Replace local goals with Supabase goals, keep non-goal items
-      setItems(prev => [...prev.filter(i => i.type !== 'goals'), ...remoteGoals]);
+      // Replace local goals + growth-items (Tugenden/Gewohnheiten/Fähigkeiten) mit den Supabase-
+      // Versionen, Lebensbereiche (rein lokal, kein PIFA-Äquivalent) bleiben unangetastet.
+      setItems(prev => [
+        ...prev.filter(i => i.type !== 'goals' && !GROUPED_TYPES.includes(i.type)),
+        ...remoteGoals,
+        ...remoteGrowthItems,
+      ]);
       // Convert Supabase todos → yuyu todo format
       const remoteTodos = (todosRes.data ?? []).map(t => ({
         id: t.id,
@@ -1280,6 +1338,31 @@ export default function YuYuApp() {
     reader.readAsText(file);
   };
 
+  // Gemeinsame Schreib-Helfer für growth_items/growth_item_groups - die geteilte Datenbasis mit
+  // PIFA für Tugenden/Gewohnheiten/Fähigkeiten. Genutzt von addItem, addGroup, createAndLinkVirtue
+  // und createAndLinkSkill, die alle dieselbe Insert-Logik brauchen.
+  const insertGroupRemote = async (type, name) => {
+    const { data, error } = await sb.from('growth_item_groups').insert({
+      user_id: session.user.id, type, name: name.trim(),
+    }).select().single();
+    if (error) {
+      window.alert(`Oberkategorie konnte nicht gespeichert werden: ${error.message}`);
+      return null;
+    }
+    return data && { id: data.id, name: data.name, type: data.type, createdAt: data.created_at };
+  };
+
+  const insertItemRemote = async (type, groupId, name) => {
+    const { data, error } = await sb.from('growth_items').insert({
+      user_id: session.user.id, type, group_id: groupId, name: name.trim(), xp: 0,
+    }).select().single();
+    if (error) {
+      window.alert(`Konnte nicht gespeichert werden: ${error.message}`);
+      return null;
+    }
+    return data && { id: data.id, type: data.type, name: data.name, xp: data.xp, groupId: data.group_id, createdAt: data.created_at };
+  };
+
   const addItem = async (name, linkedVirtues = [], extra = {}) => {
     if (!name || !name.trim()) return;
     if (GROUPED_TYPES.includes(effectiveItemType) && !selectedGroupId) return;
@@ -1320,6 +1403,13 @@ export default function YuYuApp() {
           createdAt: data.created_at,
         }]);
       }
+      return true;
+    }
+
+    if (GROUPED_TYPES.includes(effectiveItemType) && session) {
+      const newItem = await insertItemRemote(effectiveItemType, selectedGroupId, name);
+      if (!newItem) return false;
+      setItems(prev => [...prev, newItem]);
       return true;
     }
 
@@ -1391,8 +1481,14 @@ export default function YuYuApp() {
 
   // Oberkategorien (z.B. "Old Money" bei Tugenden) gruppieren die Items eines der drei
   // GROUPED_TYPES. Ein gemeinsames CRUD-Set für alle drei statt dreifacher Duplikation.
-  const addGroup = (type) => {
+  const addGroup = async (type) => {
     if (!newGroupName.trim()) return;
+    if (session) {
+      const newGroup = await insertGroupRemote(type, newGroupName);
+      if (newGroup) setItemGroups(prev => [...prev, newGroup]);
+      setNewGroupName('');
+      return;
+    }
     setItemGroups(prev => [...prev, {
       id: Date.now(),
       name: newGroupName,
@@ -1402,23 +1498,38 @@ export default function YuYuApp() {
     setNewGroupName('');
   };
 
-  const renameGroup = (id, newName) => {
+  const renameGroup = async (id, newName) => {
     if (!newName.trim()) return;
+    if (session) {
+      await sb.from('growth_item_groups').update({ name: newName.trim() }).eq('id', id);
+    }
     setItemGroups(prev => prev.map(g => (g.id === id ? { ...g, name: newName } : g)));
   };
 
   // Spontanes Anlegen einer Tugend aus dem Ziel-Formular heraus (@Mention-artig): Tugenden
   // brauchen zwingend eine Oberkategorie, daher entweder eine vorhandene per id verwenden oder
   // per newGroupName eine neue anlegen - genau eins von beiden muss gesetzt sein.
-  const createAndLinkVirtue = (name, groupId, newGroupName) => {
+  const createAndLinkVirtue = async (name, groupId, newGroupName) => {
     if (!name.trim()) return null;
     let targetGroupId = groupId;
     if (!targetGroupId && newGroupName?.trim()) {
-      const newGroup = { id: Date.now(), name: newGroupName.trim(), type: 'principles', createdAt: new Date().toISOString() };
-      setItemGroups(prev => [...prev, newGroup]);
-      targetGroupId = newGroup.id;
+      if (session) {
+        const newGroup = await insertGroupRemote('principles', newGroupName);
+        if (!newGroup) return null;
+        setItemGroups(prev => [...prev, newGroup]);
+        targetGroupId = newGroup.id;
+      } else {
+        const newGroup = { id: Date.now(), name: newGroupName.trim(), type: 'principles', createdAt: new Date().toISOString() };
+        setItemGroups(prev => [...prev, newGroup]);
+        targetGroupId = newGroup.id;
+      }
     }
     if (!targetGroupId) return null;
+    if (session) {
+      const newVirtue = await insertItemRemote('principles', targetGroupId, name);
+      if (newVirtue) setItems(prev => [...prev, newVirtue]);
+      return newVirtue;
+    }
     const newVirtue = { id: Date.now() + 1, type: 'principles', name: name.trim(), xp: 0, groupId: targetGroupId, createdAt: new Date().toISOString() };
     setItems(prev => [...prev, newVirtue]);
     return newVirtue;
@@ -1426,27 +1537,43 @@ export default function YuYuApp() {
 
   // Spontanes Anlegen einer Fähigkeit aus dem Ziel-Formular heraus - braucht wie Tugenden
   // zwingend eine Oberkategorie (siehe GROUPED_TYPES).
-  const createAndLinkSkill = (name, groupId, newGroupName) => {
+  const createAndLinkSkill = async (name, groupId, newGroupName) => {
     if (!name.trim()) return null;
     let targetGroupId = groupId;
     if (!targetGroupId && newGroupName?.trim()) {
-      const newGroup = { id: Date.now(), name: newGroupName.trim(), type: 'skills', createdAt: new Date().toISOString() };
-      setItemGroups(prev => [...prev, newGroup]);
-      targetGroupId = newGroup.id;
+      if (session) {
+        const newGroup = await insertGroupRemote('skills', newGroupName);
+        if (!newGroup) return null;
+        setItemGroups(prev => [...prev, newGroup]);
+        targetGroupId = newGroup.id;
+      } else {
+        const newGroup = { id: Date.now(), name: newGroupName.trim(), type: 'skills', createdAt: new Date().toISOString() };
+        setItemGroups(prev => [...prev, newGroup]);
+        targetGroupId = newGroup.id;
+      }
     }
     if (!targetGroupId) return null;
+    if (session) {
+      const newSkill = await insertItemRemote('skills', targetGroupId, name);
+      if (newSkill) setItems(prev => [...prev, newSkill]);
+      return newSkill;
+    }
     const newSkill = { id: Date.now() + 1, type: 'skills', name: name.trim(), xp: 0, groupId: targetGroupId, createdAt: new Date().toISOString() };
     setItems(prev => [...prev, newSkill]);
     return newSkill;
   };
 
-  const deleteGroup = (id, type, label, labelPlural) => {
+  const deleteGroup = async (id, type, label, labelPlural) => {
     const group = itemGroups.find(g => g.id === id);
     const groupItemCount = items.filter(i => i.type === type && i.groupId === id).length;
     const warning = groupItemCount > 0
       ? `"${group?.name}" und die ${groupItemCount} enthaltene${groupItemCount === 1 ? '' : 'n'} ${groupItemCount === 1 ? label : labelPlural} werden unwiderruflich gelöscht. Fortfahren?`
       : `"${group?.name}" löschen?`;
     if (!window.confirm(warning)) return;
+    if (session) {
+      // ON DELETE CASCADE auf growth_items.group_id räumt die enthaltenen Items serverseitig mit auf.
+      await sb.from('growth_item_groups').delete().eq('id', id);
+    }
     setItemGroups(prev => prev.filter(g => g.id !== id));
     setItems(prev => prev.filter(i => !(i.type === type && i.groupId === id)));
     if (selectedGroupId === id) setSelectedGroupId(null);
@@ -1541,6 +1668,11 @@ export default function YuYuApp() {
     setItems(prev => prev.map(item =>
       virtueIds.includes(item.id) ? { ...item, xp: (item.xp || 0) + VIRTUE_XP_PER_COMPLETION } : item
     ));
+    if (session) {
+      items.filter(i => virtueIds.includes(i.id)).forEach(i => {
+        sb.from('growth_items').update({ xp: (i.xp || 0) + VIRTUE_XP_PER_COMPLETION }).eq('id', i.id);
+      });
+    }
   };
 
   // Lebensbereich sammelt XP durch Beteiligung an Zielen/Aufgaben; Level wird aus der kumulierten
@@ -1589,12 +1721,19 @@ export default function YuYuApp() {
   const gainSkillXP = (skillIds) => {
     if (!skillIds || skillIds.length === 0) return;
     setItems(prev => prev.map(i => (skillIds.includes(i.id) ? { ...i, xp: (i.xp || 0) + SKILL_XP_PER_COMPLETION } : i)));
+    if (session) {
+      items.filter(i => skillIds.includes(i.id)).forEach(i => {
+        sb.from('growth_items').update({ xp: (i.xp || 0) + SKILL_XP_PER_COMPLETION }).eq('id', i.id);
+      });
+    }
   };
 
   const deleteItem = async (id) => {
     const item = items.find(i => i.id === id);
     if (item?.type === 'goals' && session) {
       await sb.from('yuyu_goals').delete().eq('id', id);
+    } else if (item && GROUPED_TYPES.includes(item.type) && session) {
+      await sb.from('growth_items').delete().eq('id', id);
     }
     setItems(items.filter(i => i.id !== id));
   };
@@ -1627,7 +1766,10 @@ export default function YuYuApp() {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
-  const deleteSelectedItems = () => {
+  const deleteSelectedItems = async () => {
+    if (GROUPED_TYPES.includes(effectiveItemType) && session) {
+      await sb.from('growth_items').delete().in('id', selectedIds);
+    }
     setItems(items.filter(i => !selectedIds.includes(i.id)));
     setSelectedIds([]);
     setSelectionMode(false);
@@ -1639,7 +1781,8 @@ export default function YuYuApp() {
     return i.type === effectiveItemType && (selectedGroupId ? i.groupId === selectedGroupId : !i.groupId);
   };
 
-  // Tugend per Drag & Drop an neue Position im Ranking der Kategorie verschieben
+  // Tugend per Drag & Drop an neue Position im Ranking der Kategorie verschieben. sort_order wird
+  // bei angemeldeten Nutzern serverseitig mitgeschrieben, damit die Reihenfolge auch für PIFA gilt.
   const reorderItems = (draggedItemId, targetItemId) => {
     if (draggedItemId === targetItemId) return;
     setItems(prev => {
@@ -1651,6 +1794,11 @@ export default function YuYuApp() {
       const reordered = [...sameType];
       const [moved] = reordered.splice(fromIdx, 1);
       reordered.splice(toIdx, 0, moved);
+      if (GROUPED_TYPES.includes(effectiveItemType) && session) {
+        reordered.forEach((item, idx) => {
+          sb.from('growth_items').update({ sort_order: idx }).eq('id', item.id);
+        });
+      }
       return [...otherType, ...reordered];
     });
   };
@@ -1688,6 +1836,11 @@ export default function YuYuApp() {
       if (newIdx < 0 || newIdx >= sameType.length) return prev;
       const reordered = [...sameType];
       [reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]];
+      if (GROUPED_TYPES.includes(effectiveItemType) && session) {
+        reordered.forEach((item, idx2) => {
+          sb.from('growth_items').update({ sort_order: idx2 }).eq('id', item.id);
+        });
+      }
       return [...otherType, ...reordered];
     });
   };
