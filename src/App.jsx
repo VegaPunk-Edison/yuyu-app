@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, CheckCircle2, Circle, X, ArrowLeft, Heart, Pencil, ChevronDown } from 'lucide-react';
-import { sb } from './lib/supabase.js';
+import { sb, setRememberMe } from './lib/supabase.js';
 
 const MAX_HEARTS = 7;
 const HEART_LOSS_PER_FAIL = 0.25;
@@ -880,6 +880,7 @@ function JobEmployerForm({ employers, initialJobTitle, initialEmployerId, onSubm
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -887,6 +888,9 @@ function LoginScreen({ onLogin }) {
     e.preventDefault();
     setError('');
     setLoading(true);
+    // Muss vor signInWithPassword gesetzt werden - der Storage-Adapter in lib/supabase.js liest
+    // dieses Flag, sobald Supabase die neue Session direkt nach dem Login abspeichert.
+    setRememberMe(remember);
     const { error: err } = await sb.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (err) setError(err.message);
@@ -918,6 +922,15 @@ function LoginScreen({ onLogin }) {
             required
             style={{ padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '15px', outline: 'none', background: '#f8fafc', color: '#1e293b' }}
           />
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={e => setRemember(e.target.checked)}
+              style={{ width: '16px', height: '16px', accentColor: '#3b82f6' }}
+            />
+            Angemeldet bleiben
+          </label>
           {error && <p style={{ color: '#ef4444', fontSize: '13px', textAlign: 'center' }}>{error}</p>}
           <button
             type="submit"
