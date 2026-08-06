@@ -1398,9 +1398,20 @@ export default function YuYuApp() {
     return data && { id: data.id, type: data.type, name: data.name, xp: data.xp, groupId: data.group_id, createdAt: data.created_at };
   };
 
+  // Tugenden dürfen nicht doppelt vorkommen - auch nicht in einer anderen Oberkategorie. Prüft
+  // über den gesamten Tugenden-Bestand hinweg (nicht nur die aktuell offene Gruppe), case-insensitiv.
+  const isDuplicateVirtueName = (name) => {
+    const normalized = name.trim().toLowerCase();
+    return items.some(i => i.type === 'principles' && i.name.trim().toLowerCase() === normalized);
+  };
+
   const addItem = async (name, linkedVirtues = [], extra = {}) => {
     if (!name || !name.trim()) return;
     if (GROUPED_TYPES.includes(effectiveItemType) && !selectedGroupId) return;
+    if (effectiveItemType === 'principles' && isDuplicateVirtueName(name)) {
+      window.alert(`"${name.trim()}" existiert bereits als Tugend (in einer anderen oder derselben Oberkategorie).`);
+      return false;
+    }
 
     if (section === 'goals' && session) {
       const lifeAreaName = extra.lifeAreaId
@@ -1546,6 +1557,10 @@ export default function YuYuApp() {
   // per newGroupName eine neue anlegen - genau eins von beiden muss gesetzt sein.
   const createAndLinkVirtue = async (name, groupId, newGroupName) => {
     if (!name.trim()) return null;
+    if (isDuplicateVirtueName(name)) {
+      window.alert(`"${name.trim()}" existiert bereits als Tugend (in einer anderen oder derselben Oberkategorie).`);
+      return null;
+    }
     let targetGroupId = groupId;
     if (!targetGroupId && newGroupName?.trim()) {
       if (session) {
