@@ -1230,10 +1230,23 @@ export default function YuYuApp() {
       ]);
       setEmployers(employersRes.data ?? []);
       setEmployerLink(employerLinkRes.data ?? null);
-      setItemGroups(growthGroupsRes.data ?? []);
-      const remoteGrowthItems = (growthItemsRes.data ?? []).map(i => ({
+
+      // Fehlgeschlagene Fetches dürfen NIE den vorhandenen State (und damit über den saveData-Effekt
+      // auch das localStorage-Backup) mit einem leeren Array überschreiben - sonst löscht ein einzelner
+      // transienter Netzwerkfehler beim Login lokale wie servergespeicherte Daten aus der Anzeige, auch
+      // wenn in Supabase weiterhin alles vorhanden ist. Bei einem Fehler bleibt der jeweilige Teil des
+      // States unangetastet, statt mit `?? []` stillschweigend geleert zu werden.
+      const goalsOk = !goalsRes.error && !msRes.error;
+      const growthOk = !growthItemsRes.error && !growthGroupsRes.error;
+      const todosOk = !todosRes.error;
+      if (!goalsOk) console.error('Ziele konnten nicht geladen werden, lokaler Stand bleibt erhalten:', goalsRes.error || msRes.error);
+      if (!growthOk) console.error('Tugenden/Gewohnheiten/Fähigkeiten konnten nicht geladen werden, lokaler Stand bleibt erhalten:', growthItemsRes.error || growthGroupsRes.error);
+      if (!todosOk) console.error('Aufgaben konnten nicht geladen werden, lokaler Stand bleibt erhalten:', todosRes.error);
+
+      if (growthOk) setItemGroups(growthGroupsRes.data ?? []);
+      const remoteGrowthItems = growthOk ? (growthItemsRes.data ?? []).map(i => ({
         id: i.id, type: i.type, name: i.name, xp: i.xp, groupId: i.group_id, createdAt: i.created_at,
-      }));
+      })) : [];
       // Group milestones by goal_id
       const msMap = {};
       for (const m of (msRes.data ?? [])) {
@@ -1241,7 +1254,7 @@ export default function YuYuApp() {
         msMap[m.goal_id].push(m);
       }
       // Convert Supabase goals → yuyu item format
-      const remoteGoals = (goalsRes.data ?? []).map(g => ({
+      const remoteGoals = goalsOk ? (goalsRes.data ?? []).map(g => ({
         id: g.id,
         type: 'goals',
         name: g.title,
@@ -1258,28 +1271,32 @@ export default function YuYuApp() {
         completed: g.status === 'achieved',
         failed: g.status === 'cancelled',
         createdAt: g.created_at,
-      }));
+      })) : [];
       // Replace local goals + growth-items (Tugenden/Gewohnheiten/Fähigkeiten) mit den Supabase-
-      // Versionen, Lebensbereiche (rein lokal, kein PIFA-Äquivalent) bleiben unangetastet.
-      setItems(prev => [
-        ...prev.filter(i => i.type !== 'goals' && !GROUPED_TYPES.includes(i.type)),
-        ...remoteGoals,
-        ...remoteGrowthItems,
-      ]);
+      // Versionen, Lebensbereiche (rein lokal, kein PIFA-Äquivalent) bleiben unangetastet. Nur der
+      // Teil wird ersetzt, dessen Fetch auch tatsächlich erfolgreich war (siehe goalsOk/growthOk oben).
+      setItems(prev => {
+        let next = prev;
+        if (goalsOk) next = next.filter(i => i.type !== 'goals');
+        if (growthOk) next = next.filter(i => !GROUPED_TYPES.includes(i.type));
+        return [...next, ...remoteGoals, ...remoteGrowthItems];
+      });
       // Convert Supabase todos → yuyu todo format
-      const remoteTodos = (todosRes.data ?? []).map(t => ({
-        id: t.id,
-        text: t.text,
-        completed: t.completed,
-        failed: t.failed,
-        linkedItems: [],
-        linkedSkillIds: [],
-        habit: t.habit || '',
-        lifeAreaId: null,
-        life_area: t.life_area || '',
-        createdAt: t.created_at,
-      }));
-      setTodos(remoteTodos);
+      if (todosOk) {
+        const remoteTodos = (todosRes.data ?? []).map(t => ({
+          id: t.id,
+          text: t.text,
+          completed: t.completed,
+          failed: t.failed,
+          linkedItems: [],
+          linkedSkillIds: [],
+          habit: t.habit || '',
+          lifeAreaId: null,
+          life_area: t.life_area || '',
+          createdAt: t.created_at,
+        }));
+        setTodos(remoteTodos);
+      }
     })();
   }, [session?.user?.id]);
 
