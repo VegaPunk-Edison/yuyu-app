@@ -1142,11 +1142,12 @@ export default function YuYuApp() {
   const [employerLinkMessage, setEmployerLinkMessage] = useState('');
   const importFileInputRef = useRef(null);
 
+  // Gewohnheiten & Fähigkeiten leben jetzt nur noch hinter dem YOU-Button (Dreieck-Auswahl,
+  // zusammen mit Tugend) - deshalb hier nur noch 3 statt 4 Segmente im äußeren Rad.
   const categories = [
-    { id: 'goals', label: 'Ziel', labelPlural: 'Ziele', startAngle: 0, endAngle: 90 },
-    { id: 'life-areas', label: 'Lebensbereich', labelPlural: 'Lebensbereiche', startAngle: 90, endAngle: 180 },
-    { id: 'skills', label: 'Gewohnheiten & Fähigkeiten', labelPlural: 'Gewohnheiten & Fähigkeiten', startAngle: 180, endAngle: 270 },
-    { id: 'todos', label: 'Aufgabe', labelPlural: 'Aufgaben', startAngle: 270, endAngle: 360 }
+    { id: 'goals', label: 'Ziel', labelPlural: 'Ziele', startAngle: 0, endAngle: 120 },
+    { id: 'life-areas', label: 'Lebensbereich', labelPlural: 'Lebensbereiche', startAngle: 120, endAngle: 240 },
+    { id: 'todos', label: 'Aufgabe', labelPlural: 'Aufgaben', startAngle: 240, endAngle: 360 }
   ];
 
   const allCategories = [...categories, { id: 'principles', label: 'Tugend', labelPlural: 'Tugenden' }];
