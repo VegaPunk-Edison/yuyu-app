@@ -1128,6 +1128,8 @@ export default function YuYuApp() {
   const [newGroupName, setNewGroupName] = useState('');
   const [editingGroupId, setEditingGroupId] = useState(null);
   const [editingGroupName, setEditingGroupName] = useState('');
+  const [editingTodoId, setEditingTodoId] = useState(null);
+  const [editingTodoText, setEditingTodoText] = useState('');
   const [hearts, setHearts] = useState(() => loadJSON('yuyu-hearts', MAX_HEARTS));
   const [heartLog, setHeartLog] = useState(() => loadJSON('yuyu-heart-log', []));
   const [penaltyTask, setPenaltyTask] = useState(() => loadJSON('yuyu-penalty-task', ''));
@@ -1882,6 +1884,14 @@ export default function YuYuApp() {
       await sb.from('yuyu_todos').delete().eq('id', todoId);
     }
     setTodos(todos.filter(t => t.id !== todoId));
+  };
+
+  const editTodo = async (todoId, newText) => {
+    if (!newText || !newText.trim()) return;
+    if (session) {
+      await sb.from('yuyu_todos').update({ text: newText.trim(), updated_at: new Date().toISOString() }).eq('id', todoId);
+    }
+    setTodos(prev => prev.map(t => (t.id === todoId ? { ...t, text: newText.trim() } : t)));
   };
 
   const sectionItems = items.filter(itemInScope);
@@ -2780,7 +2790,27 @@ export default function YuYuApp() {
                       <Circle className="w-4 h-4" strokeWidth={1.5} />
                     </button>
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm font-light text-slate-900">{todo.text}</span>
+                      {editingTodoId === todo.id ? (
+                        <input
+                          autoFocus
+                          value={editingTodoText}
+                          onChange={(e) => setEditingTodoText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              editTodo(todo.id, editingTodoText);
+                              setEditingTodoId(null);
+                            }
+                            if (e.key === 'Escape') setEditingTodoId(null);
+                          }}
+                          onBlur={() => {
+                            editTodo(todo.id, editingTodoText);
+                            setEditingTodoId(null);
+                          }}
+                          className="w-full text-sm font-light text-slate-900 bg-transparent border-b border-blue-400 outline-none"
+                        />
+                      ) : (
+                        <span className="text-sm font-light text-slate-900">{todo.text}</span>
+                      )}
                       {hasExtras && (
                         <div className="flex flex-wrap items-center gap-1 mt-1">
                           {todoLifeArea && (
@@ -2798,6 +2828,16 @@ export default function YuYuApp() {
                         </div>
                       )}
                     </div>
+                    <button
+                      onClick={() => {
+                        setEditingTodoId(todo.id);
+                        setEditingTodoText(todo.text);
+                      }}
+                      title="Bearbeiten"
+                      className="mt-0.5 p-1.5 -m-1.5 text-slate-300 hover:text-blue-500 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
+                    >
+                      <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
+                    </button>
                     <button
                       onClick={() => failTodo(todo.id)}
                       title="Als gescheitert markieren"
