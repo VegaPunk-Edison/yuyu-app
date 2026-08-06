@@ -22,22 +22,36 @@ const computeLevelFromXP = (totalXp) => {
   return { level, xpInLevel: rem, xpNeeded: level < XP_LEVEL_CAP ? xpForLevel(level) : null };
 };
 
+// Oberkategorien gelten für diese drei Typen - Items dieser Typen sind nur innerhalb einer
+// offenen Oberkategorie sichtbar/anlegbar (wie bisher schon bei Tugenden).
+const GROUPED_TYPES = ['principles', 'habits', 'skills'];
+// Feste ids für die einmalig angelegten "Allgemein"-Default-Gruppen (siehe itemGroups-Initializer
+// und migrateItemXP) - als String statt Date.now(), damit zwei unabhängige useState-Initializer
+// dieselbe id referenzieren können, ohne sich zu koordinieren.
+const DEFAULT_GROUP_ID = { habits: 'default-habits', skills: 'default-skills' };
+
 // Migration: alte Felder (Tugenden: points; Lebensbereiche/Gewohnheiten/Fähigkeiten/Ziele:
 // level+experience+maxExperience) in die neue kumulative xp-Struktur überführen. Rechnet den
 // bisherigen Fortschritt näherungsweise um, statt ihn zu verwerfen (alt: 3 Punkte = 1 Level bei
 // Tugenden bzw. fix 100 XP pro Level bei den anderen Typen - beides war linear, die neue Formel
-// nicht mehr, daher nur eine Näherung auf Basis des bisher investierten Gesamtaufwands).
+// nicht mehr, daher nur eine Näherung auf Basis des bisher investierten Gesamtaufwands). Getrennt
+// davon: Gewohnheiten/Fähigkeiten ohne groupId (gab es vor den Oberkategorien für diese Typen)
+// bekommen die "Allgemein"-Default-Gruppe zugewiesen, unabhängig davon ob xp schon migriert war.
 const migrateItemXP = (item) => {
-  if (item.xp !== undefined) return item;
-  if (item.type === 'principles') {
-    const { points, ...rest } = item;
-    return { ...rest, xp: Math.round((points || 0) * (100 / 3)) };
+  let result = item;
+  if (result.xp === undefined) {
+    if (result.type === 'principles') {
+      const { points, ...rest } = result;
+      result = { ...rest, xp: Math.round((points || 0) * (100 / 3)) };
+    } else if (['life-areas', 'habits', 'skills', 'goals'].includes(result.type)) {
+      const { level, experience, maxExperience: _maxExperience, ...rest } = result;
+      result = { ...rest, xp: (level || 0) * 100 + (experience || 0) };
+    }
   }
-  if (['life-areas', 'habits', 'skills', 'goals'].includes(item.type)) {
-    const { level, experience, maxExperience: _maxExperience, ...rest } = item;
-    return { ...rest, xp: (level || 0) * 100 + (experience || 0) };
+  if ((result.type === 'habits' || result.type === 'skills') && !result.groupId) {
+    result = { ...result, groupId: DEFAULT_GROUP_ID[result.type] };
   }
-  return item;
+  return result;
 };
 
 // Die vier Lebensbereiche sind fest vorgegeben, keine frei anlegbaren Einträge
@@ -123,7 +137,7 @@ const GOAL_TITLE_MAX_LENGTH = 60;
 // -> Titel (Pflicht, zeichenbegrenzt) -> gewünschtes Ergebnis (Pflicht) -> Tugend(en, mehrfach
 // möglich, optional). Jede Antwort wird oben als Zusammenfassung angezeigt; am Ende bestätigt
 // ein "Speichern"-Klick oder leeres Enter auf der letzten Stufe das Ziel auf einmal.
-function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, onCreateSkill, onSubmit }) {
+function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCreateVirtue, onCreateSkill, onSubmit }) {
   const [stage, setStage] = useState('lifearea');
   const [value, setValue] = useState('');
   const [lifeArea, setLifeArea] = useState(null);
@@ -133,12 +147,12 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
   const [description, setDescription] = useState('');
   const [linkedIds, setLinkedIds] = useState([]);
   const [linkedSkillIds, setLinkedSkillIds] = useState([]);
-  const [pendingVirtueName, setPendingVirtueName] = useState('');
+  const [pendingGroupItemName, setPendingGroupItemName] = useState('');
   const [creatingNewGroup, setCreatingNewGroup] = useState(false);
   const inputRef = useRef(null);
 
   // Fokus wandert mit, damit man ohne erneutes Antippen weiterschreiben kann - auch wenn sich
-  // innerhalb der virtue-group-Stufe zwischen Liste und "neue Oberkategorie"-Eingabe umschaltet.
+  // innerhalb der virtue-group/skill-group-Stufe zwischen Liste und "neue Oberkategorie"-Eingabe umschaltet.
   useEffect(() => {
     inputRef.current?.focus();
   }, [stage, creatingNewGroup]);
@@ -171,17 +185,26 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
 
   const removeSkill = (id) => setLinkedSkillIds(prev => prev.filter(i => i !== id));
 
-  // Oberkategorie für eine spontan angelegte Tugend festlegen - entweder eine vorhandene per id
-  // (Klick aus der Liste) oder eine neue mit diesem Namen (aus dem "+ Neue Oberkategorie"-Feld).
-  const pickVirtueGroup = (groupId, newGroupName) => {
-    const newVirtue = groupId
-      ? onCreateVirtue(pendingVirtueName, groupId, null)
-      : onCreateVirtue(pendingVirtueName, null, newGroupName);
-    if (newVirtue) addVirtue(newVirtue);
-    setPendingVirtueName('');
+  // Oberkategorie für eine spontan angelegte Tugend/Fähigkeit festlegen - entweder eine vorhandene
+  // per id (Klick aus der Liste) oder eine neue mit diesem Namen (aus dem "+ Neue Oberkategorie"-
+  // Feld). Welcher Typ gemeint ist, ergibt sich aus der aktuellen Stufe (virtue-group/skill-group).
+  const pickGroup = (groupId, newGroupName) => {
+    if (stage === 'virtue-group') {
+      const newVirtue = groupId
+        ? onCreateVirtue(pendingGroupItemName, groupId, null)
+        : onCreateVirtue(pendingGroupItemName, null, newGroupName);
+      if (newVirtue) addVirtue(newVirtue);
+      setStage('virtue');
+    } else {
+      const newSkill = groupId
+        ? onCreateSkill(pendingGroupItemName, groupId, null)
+        : onCreateSkill(pendingGroupItemName, null, newGroupName);
+      if (newSkill) addSkill(newSkill);
+      setStage('skill');
+    }
+    setPendingGroupItemName('');
     setValue('');
     setCreatingNewGroup(false);
-    setStage('virtue');
   };
 
   const reset = () => {
@@ -194,7 +217,7 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
     setDescription('');
     setLinkedIds([]);
     setLinkedSkillIds([]);
-    setPendingVirtueName('');
+    setPendingGroupItemName('');
     setCreatingNewGroup(false);
   };
 
@@ -239,15 +262,15 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
       setStage('outcome');
       return;
     }
-    if (stage === 'virtue-group') {
+    if (stage === 'virtue-group' || stage === 'skill-group') {
       if (creatingNewGroup) {
         setCreatingNewGroup(false);
         setValue('');
         return;
       }
-      setValue(pendingVirtueName);
-      setPendingVirtueName('');
-      setStage('virtue');
+      setValue(pendingGroupItemName);
+      setPendingGroupItemName('');
+      setStage(stage === 'virtue-group' ? 'virtue' : 'skill');
       return;
     }
     if (stage === 'skill') {
@@ -327,7 +350,7 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
       // Kein Treffer, aber ein getippter Name: Tugend gibt es noch nicht - da sie zwingend
       // einer Oberkategorie angehören muss, erst dort auswählen/anlegen statt sie zu verwerfen.
       if (value.trim()) {
-        setPendingVirtueName(value.trim());
+        setPendingGroupItemName(value.trim());
         setValue('');
         setStage('virtue-group');
         return;
@@ -337,10 +360,10 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
       return;
     }
 
-    if (stage === 'virtue-group') {
+    if (stage === 'virtue-group' || stage === 'skill-group') {
       // Nur die "+ Neue Oberkategorie"-Eingabe ist ein Textfeld - vorhandene werden per Klick
-      // aus der Liste gewählt (pickVirtueGroup), nicht getippt.
-      if (creatingNewGroup && value.trim()) pickVirtueGroup(null, value.trim());
+      // aus der Liste gewählt (pickGroup), nicht getippt.
+      if (creatingNewGroup && value.trim()) pickGroup(null, value.trim());
       return;
     }
 
@@ -355,12 +378,12 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
       addSkill(skillMatch);
       return;
     }
-    // Kein Treffer, aber ein getippter Name: Fähigkeit direkt anlegen (keine Gruppenpflicht wie
-    // bei Tugenden) und verknüpfen, dann auf der Stufe bleiben um ggf. weitere hinzuzufügen.
+    // Kein Treffer, aber ein getippter Name: Fähigkeit gibt es noch nicht - braucht wie Tugenden
+    // zwingend eine Oberkategorie, erst dort auswählen/anlegen statt zu verwerfen.
     if (value.trim()) {
-      const newSkill = onCreateSkill(value.trim());
-      if (newSkill) addSkill(newSkill);
+      setPendingGroupItemName(value.trim());
       setValue('');
+      setStage('skill-group');
       return;
     }
     save();
@@ -375,6 +398,7 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
     virtue: 'Tugend eingeben (mehrere möglich), Enter zum Bestätigen',
     'virtue-group': 'Name der neuen Oberkategorie',
     skill: 'Fähigkeit eingeben (mehrere möglich), Enter zum Bestätigen',
+    'skill-group': 'Name der neuen Oberkategorie',
   };
 
   return (
@@ -417,18 +441,18 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
         </div>
       )}
 
-      {stage === 'virtue-group' ? (
+      {stage === 'virtue-group' || stage === 'skill-group' ? (
         <div>
           <p className="text-xs text-slate-500 font-light mb-2">
-            Neue Tugend "{pendingVirtueName}" - Oberkategorie wählen:
+            Neue {stage === 'virtue-group' ? 'Tugend' : 'Fähigkeit'} "{pendingGroupItemName}" - Oberkategorie wählen:
           </p>
           {!creatingNewGroup ? (
             <div className="space-y-1.5">
-              {virtueGroups.map(g => (
+              {(stage === 'virtue-group' ? virtueGroups : skillGroups).map(g => (
                 <button
                   key={g.id}
                   type="button"
-                  onClick={() => pickVirtueGroup(g.id, null)}
+                  onClick={() => pickGroup(g.id, null)}
                   className="block w-full text-left px-3 py-2 text-sm rounded-lg border border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50 transition"
                 >
                   {g.name}
@@ -449,7 +473,7 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, onCreateVirtue, on
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={placeholders['virtue-group']}
+              placeholder={placeholders[stage]}
               className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
             />
           )}
@@ -1078,11 +1102,32 @@ export default function YuYuApp() {
   const [draggedId, setDraggedId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [virtuesListExpanded, setVirtuesListExpanded] = useState(false);
-  const [virtueGroups, setVirtueGroups] = useState(() => loadJSON('yuyu-virtue-groups', []));
-  const [selectedVirtueGroup, setSelectedVirtueGroup] = useState(null);
-  const [newVirtueGroupName, setNewVirtueGroupName] = useState('');
-  const [editingVirtueGroupId, setEditingVirtueGroupId] = useState(null);
-  const [editingVirtueGroupName, setEditingVirtueGroupName] = useState('');
+  // Oberkategorien gelten für alle drei gruppierten Typen (Tugenden/Gewohnheiten/Fähigkeiten) -
+  // ein gemeinsames Array mit `type`-Feld statt drei getrennter States, da immer nur eine Sektion
+  // gleichzeitig sichtbar ist. Migration: alte Gruppen ohne `type` sind aus der Zeit, als es nur
+  // Tugend-Oberkategorien gab. Für Gewohnheiten/Fähigkeiten ohne jede Gruppe (die es vor diesem
+  // Update noch nicht gab) wird einmalig eine Default-Gruppe "Allgemein" angelegt und bestehende
+  // ungruppierte Items hineingehängt, damit sie nach dem Update sichtbar bleiben.
+  const [itemGroups, setItemGroups] = useState(() => {
+    const saved = loadJSON('yuyu-virtue-groups', []).map(g => (g.type ? g : { ...g, type: 'principles' }));
+    const savedItems = loadJSON('yuyu-items', []);
+    const extraGroups = [];
+    for (const type of ['habits', 'skills']) {
+      const hasGroup = saved.some(g => g.type === type);
+      const hasUngroupedItems = savedItems.some(i => i.type === type && !i.groupId);
+      if (!hasGroup && hasUngroupedItems) {
+        // Feste String-id statt Date.now(), damit der items-Initializer (separater useState-Aufruf,
+        // siehe DEFAULT_GROUP_ID) unabhängig dieselbe id referenzieren kann, ohne beide Initializer
+        // koordinieren zu müssen.
+        extraGroups.push({ id: DEFAULT_GROUP_ID[type], name: 'Allgemein', type, createdAt: new Date().toISOString() });
+      }
+    }
+    return [...saved, ...extraGroups];
+  });
+  const [selectedGroupId, setSelectedGroupId] = useState(null);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [editingGroupId, setEditingGroupId] = useState(null);
+  const [editingGroupName, setEditingGroupName] = useState('');
   const [hearts, setHearts] = useState(() => loadJSON('yuyu-hearts', MAX_HEARTS));
   const [heartLog, setHeartLog] = useState(() => loadJSON('yuyu-heart-log', []));
   const [penaltyTask, setPenaltyTask] = useState(() => loadJSON('yuyu-penalty-task', ''));
@@ -1185,7 +1230,7 @@ export default function YuYuApp() {
   // hätte, und würde die gerade geladenen/migrierten Daten wieder mit leeren Arrays überschreiben.
   useEffect(() => {
     saveData();
-  }, [items, todos, virtueGroups, hearts, heartLog, penaltyTask]);
+  }, [items, todos, itemGroups, hearts, heartLog, penaltyTask]);
 
   // Bei 0 Herzen ist nur noch der Aufgaben-Bereich zugänglich (Strafaufgabe muss zuerst erledigt werden)
   useEffect(() => {
@@ -1197,7 +1242,7 @@ export default function YuYuApp() {
   const saveData = () => {
     localStorage.setItem('yuyu-items', JSON.stringify(items));
     localStorage.setItem('yuyu-todos', JSON.stringify(todos));
-    localStorage.setItem('yuyu-virtue-groups', JSON.stringify(virtueGroups));
+    localStorage.setItem('yuyu-virtue-groups', JSON.stringify(itemGroups));
     localStorage.setItem('yuyu-hearts', JSON.stringify(hearts));
     localStorage.setItem('yuyu-heart-log', JSON.stringify(heartLog));
     localStorage.setItem('yuyu-penalty-task', JSON.stringify(penaltyTask));
@@ -1205,7 +1250,7 @@ export default function YuYuApp() {
 
   // Backup: alle Daten als JSON-Datei herunterladen, da nichts außerhalb dieses Browsers gespeichert wird
   const exportData = () => {
-    const data = { items, todos, virtueGroups, hearts, heartLog, penaltyTask, exportedAt: new Date().toISOString() };
+    const data = { items, todos, virtueGroups: itemGroups, hearts, heartLog, penaltyTask, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1223,7 +1268,7 @@ export default function YuYuApp() {
         if (!window.confirm('Vorhandene Daten mit dieser Datei überschreiben?')) return;
         if (Array.isArray(data.items)) setItems(data.items.map(migrateItemXP));
         if (Array.isArray(data.todos)) setTodos(data.todos);
-        if (Array.isArray(data.virtueGroups)) setVirtueGroups(data.virtueGroups);
+        if (Array.isArray(data.virtueGroups)) setItemGroups(data.virtueGroups.map(g => (g.type ? g : { ...g, type: 'principles' })));
         if (typeof data.hearts === 'number') setHearts(data.hearts);
         if (Array.isArray(data.heartLog)) setHeartLog(data.heartLog);
         if (typeof data.penaltyTask === 'string') setPenaltyTask(data.penaltyTask);
@@ -1236,7 +1281,7 @@ export default function YuYuApp() {
 
   const addItem = async (name, linkedVirtues = [], extra = {}) => {
     if (!name || !name.trim()) return;
-    if (section === 'principles' && !selectedVirtueGroup) return;
+    if (GROUPED_TYPES.includes(effectiveItemType) && !selectedGroupId) return;
 
     if (section === 'goals' && session) {
       const lifeAreaName = extra.lifeAreaId
@@ -1284,18 +1329,16 @@ export default function YuYuApp() {
       xp: 0,
       createdAt: new Date().toISOString(),
     };
-    if (section === 'principles') {
-      newItem.groupId = selectedVirtueGroup;
-    } else {
-      if (section === 'goals') {
-        newItem.linkedItems = linkedVirtues;
-        newItem.linkedSkillIds = extra.linkedSkillIds || [];
-        newItem.lifeAreaId = extra.lifeAreaId || null;
-        newItem.description = (extra.description || '').trim();
-        newItem.learningGoal = (extra.learningGoal || '').trim();
-        newItem.problem = (extra.problem || '').trim();
-        newItem.milestones = [];
-      }
+    if (GROUPED_TYPES.includes(effectiveItemType)) {
+      newItem.groupId = selectedGroupId;
+    } else if (section === 'goals') {
+      newItem.linkedItems = linkedVirtues;
+      newItem.linkedSkillIds = extra.linkedSkillIds || [];
+      newItem.lifeAreaId = extra.lifeAreaId || null;
+      newItem.description = (extra.description || '').trim();
+      newItem.learningGoal = (extra.learningGoal || '').trim();
+      newItem.problem = (extra.problem || '').trim();
+      newItem.milestones = [];
     }
     setItems([...items, newItem]);
     return true;
@@ -1345,20 +1388,22 @@ export default function YuYuApp() {
     )));
   };
 
-  // Tugend-Oberkategorien (z.B. "Old Money") gruppieren einzelne Tugenden
-  const addVirtueGroup = () => {
-    if (!newVirtueGroupName.trim()) return;
-    setVirtueGroups([...virtueGroups, {
+  // Oberkategorien (z.B. "Old Money" bei Tugenden) gruppieren die Items eines der drei
+  // GROUPED_TYPES. Ein gemeinsames CRUD-Set für alle drei statt dreifacher Duplikation.
+  const addGroup = (type) => {
+    if (!newGroupName.trim()) return;
+    setItemGroups(prev => [...prev, {
       id: Date.now(),
-      name: newVirtueGroupName,
+      name: newGroupName,
+      type,
       createdAt: new Date().toISOString(),
     }]);
-    setNewVirtueGroupName('');
+    setNewGroupName('');
   };
 
-  const renameVirtueGroup = (id, newName) => {
+  const renameGroup = (id, newName) => {
     if (!newName.trim()) return;
-    setVirtueGroups(virtueGroups.map(g => (g.id === id ? { ...g, name: newName } : g)));
+    setItemGroups(prev => prev.map(g => (g.id === id ? { ...g, name: newName } : g)));
   };
 
   // Spontanes Anlegen einer Tugend aus dem Ziel-Formular heraus (@Mention-artig): Tugenden
@@ -1368,8 +1413,8 @@ export default function YuYuApp() {
     if (!name.trim()) return null;
     let targetGroupId = groupId;
     if (!targetGroupId && newGroupName?.trim()) {
-      const newGroup = { id: Date.now(), name: newGroupName.trim(), createdAt: new Date().toISOString() };
-      setVirtueGroups(prev => [...prev, newGroup]);
+      const newGroup = { id: Date.now(), name: newGroupName.trim(), type: 'principles', createdAt: new Date().toISOString() };
+      setItemGroups(prev => [...prev, newGroup]);
       targetGroupId = newGroup.id;
     }
     if (!targetGroupId) return null;
@@ -1378,26 +1423,33 @@ export default function YuYuApp() {
     return newVirtue;
   };
 
-  // Spontanes Anlegen einer Fähigkeit aus dem Ziel-Formular heraus - keine Gruppenpflicht wie bei
-  // Tugenden, daher ohne Zwischenschritt direkt anlegbar.
-  const createAndLinkSkill = (name) => {
+  // Spontanes Anlegen einer Fähigkeit aus dem Ziel-Formular heraus - braucht wie Tugenden
+  // zwingend eine Oberkategorie (siehe GROUPED_TYPES).
+  const createAndLinkSkill = (name, groupId, newGroupName) => {
     if (!name.trim()) return null;
-    const newSkill = { id: Date.now(), type: 'skills', name: name.trim(), xp: 0, createdAt: new Date().toISOString() };
+    let targetGroupId = groupId;
+    if (!targetGroupId && newGroupName?.trim()) {
+      const newGroup = { id: Date.now(), name: newGroupName.trim(), type: 'skills', createdAt: new Date().toISOString() };
+      setItemGroups(prev => [...prev, newGroup]);
+      targetGroupId = newGroup.id;
+    }
+    if (!targetGroupId) return null;
+    const newSkill = { id: Date.now() + 1, type: 'skills', name: name.trim(), xp: 0, groupId: targetGroupId, createdAt: new Date().toISOString() };
     setItems(prev => [...prev, newSkill]);
     return newSkill;
   };
 
-  const deleteVirtueGroup = (id) => {
-    const group = virtueGroups.find(g => g.id === id);
-    const groupItemCount = items.filter(i => i.groupId === id).length;
+  const deleteGroup = (id, type, label, labelPlural) => {
+    const group = itemGroups.find(g => g.id === id);
+    const groupItemCount = items.filter(i => i.type === type && i.groupId === id).length;
     const warning = groupItemCount > 0
-      ? `"${group?.name}" und die ${groupItemCount} enthaltene${groupItemCount === 1 ? '' : 'n'} Tugend${groupItemCount === 1 ? '' : 'en'} werden unwiderruflich gelöscht. Fortfahren?`
+      ? `"${group?.name}" und die ${groupItemCount} enthaltene${groupItemCount === 1 ? '' : 'n'} ${groupItemCount === 1 ? label : labelPlural} werden unwiderruflich gelöscht. Fortfahren?`
       : `"${group?.name}" löschen?`;
     if (!window.confirm(warning)) return;
-    setVirtueGroups(virtueGroups.filter(g => g.id !== id));
-    setItems(items.filter(i => i.groupId !== id));
-    if (selectedVirtueGroup === id) setSelectedVirtueGroup(null);
-    if (editingVirtueGroupId === id) setEditingVirtueGroupId(null);
+    setItemGroups(prev => prev.filter(g => g.id !== id));
+    setItems(prev => prev.filter(i => !(i.type === type && i.groupId === id)));
+    if (selectedGroupId === id) setSelectedGroupId(null);
+    if (editingGroupId === id) setEditingGroupId(null);
   };
 
   // Merkt sich nur die letzten 3 Herz-Aktionen (Gewinn/Verlust) für die Anzeige an der Herzleiste
@@ -1580,10 +1632,10 @@ export default function YuYuApp() {
     setSelectionMode(false);
   };
 
-  // Welche Items gerade sichtbar/sortierbar sind: bei Tugenden zusätzlich nach Oberkategorie gefiltert
+  // Welche Items gerade sichtbar/sortierbar sind: bei gruppierten Typen zusätzlich nach Oberkategorie gefiltert
   const itemInScope = (i) => {
-    if (section !== 'principles') return i.type === effectiveItemType;
-    return i.type === 'principles' && (selectedVirtueGroup ? i.groupId === selectedVirtueGroup : !i.groupId);
+    if (!GROUPED_TYPES.includes(effectiveItemType)) return i.type === effectiveItemType;
+    return i.type === effectiveItemType && (selectedGroupId ? i.groupId === selectedGroupId : !i.groupId);
   };
 
   // Tugend per Drag & Drop an neue Position im Ranking der Kategorie verschieben
@@ -1824,6 +1876,443 @@ export default function YuYuApp() {
       </div>
     </div>
   );
+
+  // Oberkategorien-Akkordeon für einen der drei GROUPED_TYPES: Add-Gruppe-Input, Puzzle-Piece-
+  // Grid der Gruppen, aufgeklapptes Panel der aktiven Gruppe (Add-Item, Puzzle-Piece-Grid der
+  // Mitglieder, Item-Liste mit Neu-anordnen/Auswählen, Umbenennen/Löschen). Als Closure-Funktion
+  // (wie renderHearts) statt eigenes Component mit Props-Threading, da sie nur innerhalb von
+  // YuYuApp aufgerufen wird und direkt auf items/itemGroups/selectedGroupId usw. zugreifen kann.
+  const renderGroupedSection = (type, label, labelPlural, levelLabel) => {
+    const groups = itemGroups.filter(g => g.type === type);
+    return (
+      <div className="mb-8 sm:mb-10">
+        <div className="max-w-sm mb-4">
+          <input
+            type="text"
+            value={newGroupName}
+            onChange={(e) => setNewGroupName(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && addGroup(type)}
+            placeholder={`Neue Oberkategorie (${label})`}
+            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+          />
+        </div>
+        {groups.length > 0 && (
+          <>
+            {/* Oberkategorien: eigene Puzzleteile, die sich zu einem großen Ganzen zusammenfügen */}
+            <div className="flex justify-center overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+              {(() => {
+                const perRow = 3;
+                const pieceWidth = 168;
+                const pieceHeight = 128;
+                const rows = [];
+                for (let i = 0; i < groups.length; i += perRow) {
+                  rows.push(groups.slice(i, i + perRow));
+                }
+                const maxRowLength = Math.min(groups.length, perRow);
+                const svgWidth = maxRowLength * pieceWidth + 20;
+                const svgHeight = rows.length * pieceHeight + 20;
+
+                return (
+                  <svg width={svgWidth} height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
+                    {rows.map((rowGroups, rowIdx) =>
+                      rowGroups.map((group, colIdx) => {
+                        const edges = {
+                          left: colIdx > 0 ? 'notch' : 'flat',
+                          right: colIdx < rowGroups.length - 1 ? 'tab' : 'flat',
+                          top: rowIdx > 0 && rows[rowIdx - 1][colIdx] ? 'notch' : 'flat',
+                          bottom: rows[rowIdx + 1] && rows[rowIdx + 1][colIdx] ? 'tab' : 'flat'
+                        };
+                        const path = puzzlePieceGridPath(pieceWidth, pieceHeight, edges);
+                        const x = 10 + colIdx * pieceWidth;
+                        const y = 10 + rowIdx * pieceHeight;
+                        const groupItems = items.filter(i => i.type === type && i.groupId === group.id);
+                        const groupXP = groupItems.reduce((sum, i) => sum + (i.xp || 0), 0);
+                        const groupLevel = computeLevelFromXP(groupXP).level;
+                        const isEditingGroup = editingGroupId === group.id;
+                        const isOpen = selectedGroupId === group.id;
+
+                        const togglePiece = () => {
+                          if (isEditingGroup) return;
+                          setSelectedGroupId(prev => (prev === group.id ? null : group.id));
+                          setSelectionMode(false);
+                          setSelectedIds([]);
+                          setReorderMode(false);
+                          setDraggedId(null);
+                          setDragOverId(null);
+                        };
+
+                        return (
+                          <g
+                            key={group.id}
+                            transform={`translate(${x}, ${y})`}
+                            onClick={togglePiece}
+                            className="cursor-pointer"
+                          >
+                            <path
+                              d={path}
+                              fill={isOpen ? '#2f4f3a' : '#fdfcf9'}
+                              stroke="#d4af37"
+                              strokeWidth={isOpen ? 1.25 : 0.75}
+                              className="transition-colors"
+                            />
+                            <foreignObject x="12" y="8" width={pieceWidth - 24} height={pieceHeight - 16}>
+                              <div className="h-full flex flex-col items-center justify-center text-center px-1">
+                                <h3
+                                  className={`text-xs sm:text-sm font-medium leading-tight break-words ${isOpen ? '' : 'text-slate-900'}`}
+                                  style={isOpen ? { color: '#d4af37' } : undefined}
+                                >
+                                  {group.name}
+                                </h3>
+                                <p
+                                  className={`text-[10px] font-light mt-1 leading-tight ${isOpen ? '' : 'text-slate-400'}`}
+                                  style={isOpen ? { color: '#d4af37', opacity: 0.75 } : undefined}
+                                >
+                                  {groupItems.length} {groupItems.length === 1 ? label : labelPlural} · {levelLabel} {groupLevel}
+                                </p>
+                              </div>
+                            </foreignObject>
+                          </g>
+                        );
+                      })
+                    )}
+                  </svg>
+                );
+              })()}
+            </div>
+
+            {/* Aufgeklapptes Panel für die aktive Oberkategorie */}
+            {(() => {
+              const openGroup = groups.find(g => g.id === selectedGroupId);
+              if (!openGroup) return null;
+              return (
+                <div key={openGroup.id} className="max-w-md mx-auto mt-6 border border-blue-200 rounded-lg overflow-hidden">
+                  <div className="px-4 pb-6 pt-4">
+                    <div className="flex items-center justify-between gap-2 mb-4">
+                      <h3 className="text-sm text-slate-900 font-medium">{openGroup.name}</h3>
+                      <button
+                        onClick={() => setSelectedGroupId(null)}
+                        className="p-1.5 -m-1.5 text-slate-300 hover:text-slate-600 transition flex-shrink-0"
+                      >
+                        <X className="w-4 h-4" strokeWidth={1.5} />
+                      </button>
+                    </div>
+
+                    {/* Add Item - nur innerhalb der offenen Oberkategorie möglich */}
+                    <div className="mb-8 max-w-sm">
+                      <input
+                        type="text"
+                        value={newItemName}
+                        onChange={(e) => setNewItemName(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && newItemName.trim()) {
+                            addItem(newItemName);
+                            setNewItemName('');
+                          }
+                        }}
+                        placeholder={`${label} hinzufügen`}
+                        className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+                      />
+                    </div>
+
+                    {/* Puzzle-Piece Visualisierung */}
+                    {sectionItems.length > 0 && (
+                      <div className="mb-8 pb-6 border-b border-slate-100">
+                        <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-6 sm:mb-8 text-center">
+                          Deine {labelPlural} fügen sich zusammen
+                        </h2>
+                        <div className="flex justify-center overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+                          {(() => {
+                            const perRow = 3;
+                            const pieceWidth = 96;
+                            const pieceHeight = 74;
+                            const rows = [];
+                            for (let i = 0; i < sectionItems.length; i += perRow) {
+                              rows.push(sectionItems.slice(i, i + perRow));
+                            }
+                            const maxRowLength = Math.min(sectionItems.length, perRow);
+                            const svgWidth = maxRowLength * pieceWidth + 20;
+                            const svgHeight = rows.length * pieceHeight + 20;
+
+                            return (
+                              <svg width={svgWidth} height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
+                                {rows.map((rowItems, rowIdx) =>
+                                  rowItems.map((item, colIdx) => {
+                                    const edges = {
+                                      left: colIdx > 0 ? 'notch' : 'flat',
+                                      right: colIdx < rowItems.length - 1 ? 'tab' : 'flat',
+                                      top: rowIdx > 0 && rows[rowIdx - 1][colIdx] ? 'notch' : 'flat',
+                                      bottom: rows[rowIdx + 1] && rows[rowIdx + 1][colIdx] ? 'tab' : 'flat'
+                                    };
+                                    const path = puzzlePieceGridPath(pieceWidth, pieceHeight, edges);
+                                    const x = 10 + colIdx * pieceWidth;
+                                    const y = 10 + rowIdx * pieceHeight;
+                                    const nameLines = wrapPuzzleText(item.name, 12);
+                                    const nameFontSize = nameLines.some(l => l.length > 10) ? 7.5 : 8.5;
+
+                                    return (
+                                      <g key={item.id} transform={`translate(${x}, ${y})`}>
+                                        <path
+                                          d={path}
+                                          fill="#fdfcf9"
+                                          stroke="#d4af37"
+                                          strokeWidth="0.75"
+                                        />
+                                        <text
+                                          x={pieceWidth / 2}
+                                          textAnchor="middle"
+                                          fill="#1e3a8a"
+                                          fontSize={nameFontSize}
+                                          fontWeight="400"
+                                          fontFamily="'Lora', serif"
+                                        >
+                                          {nameLines.map((line, i) => (
+                                            <tspan
+                                              key={i}
+                                              x={pieceWidth / 2}
+                                              y={pieceHeight / 2 - 14 + i * (nameFontSize + 2)}
+                                            >
+                                              {line}
+                                            </tspan>
+                                          ))}
+                                        </text>
+                                        <text
+                                          x={pieceWidth / 2}
+                                          y={pieceHeight / 2 + 14}
+                                          textAnchor="middle"
+                                          fill="#d4af37"
+                                          fontSize="9"
+                                          fontWeight="600"
+                                          fontFamily="'Lora', serif"
+                                        >
+                                          Lv. {computeLevelFromXP(item.xp || 0).level}
+                                        </text>
+                                        {item.createdAt && (
+                                          <text
+                                            x={pieceWidth / 2}
+                                            y={pieceHeight / 2 + 27}
+                                            textAnchor="middle"
+                                            fill="#000000"
+                                            fontSize="7"
+                                            fontWeight="400"
+                                            fontFamily="'Lora', serif"
+                                          >
+                                            {new Date(item.createdAt).toLocaleDateString('de-DE')}
+                                          </text>
+                                        )}
+                                      </g>
+                                    );
+                                  })
+                                )}
+                              </svg>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Items list - selbst ein Toggle für die ganze Liste */}
+                    <div className="max-w-md space-y-4">
+                      <div
+                        className="flex items-center justify-between cursor-pointer"
+                        onClick={() => {
+                          setVirtuesListExpanded(prev => {
+                            const next = !prev;
+                            if (!next) {
+                              setReorderMode(false);
+                              setSelectionMode(false);
+                              setSelectedIds([]);
+                            }
+                            return next;
+                          });
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <ChevronDown
+                            className={`w-3.5 h-3.5 text-slate-400 transition-transform flex-shrink-0 ${virtuesListExpanded ? '' : '-rotate-90'}`}
+                            strokeWidth={1.5}
+                          />
+                          <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase">
+                            {labelPlural}
+                          </h2>
+                        </div>
+                        {virtuesListExpanded && (
+                          <div className="flex items-center gap-3">
+                            {selectionMode && selectedIds.length > 0 && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); deleteSelectedItems(); }}
+                                className="text-xs text-red-500 hover:text-red-600 font-light transition"
+                              >
+                                Löschen ({selectedIds.length})
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReorderMode(!reorderMode);
+                                setSelectionMode(false);
+                                setSelectedIds([]);
+                              }}
+                              className={`text-xs font-light tracking-wide transition ${
+                                reorderMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
+                              }`}
+                            >
+                              {reorderMode ? 'Fertig' : 'Neu anordnen'}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectionMode(!selectionMode);
+                                setSelectedIds([]);
+                                setReorderMode(false);
+                              }}
+                              className={`text-xs font-light tracking-wide transition ${
+                                selectionMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
+                              }`}
+                            >
+                              {selectionMode ? 'Fertig' : 'Auswählen'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {virtuesListExpanded && reorderMode && (
+                        <p className="text-xs text-slate-400 font-light -mt-2">Am Griff ziehen, um die Reihenfolge zu ändern</p>
+                      )}
+
+                      {virtuesListExpanded && (
+                      <div className="space-y-4">
+                        {sectionItems.map((item) => (
+                          <div
+                            key={item.id}
+                            data-item-id={item.id}
+                            className={`group flex items-start gap-3 transition ${
+                              selectionMode ? 'cursor-pointer' : ''
+                            } ${
+                              draggedId === item.id ? 'opacity-40' : 'opacity-100'
+                            } ${
+                              reorderMode && dragOverId === item.id && draggedId !== item.id
+                                ? 'outline outline-2 outline-blue-300 rounded-lg'
+                                : ''
+                            }`}
+                            onClick={(e) => { e.stopPropagation(); selectionMode && toggleSelectItem(item.id); }}
+                          >
+                            {reorderMode && (
+                              <div
+                                onPointerDown={(e) => handleDragHandlePointerDown(e, item.id)}
+                                onPointerMove={handleDragHandlePointerMove}
+                                onPointerUp={handleDragHandlePointerUp}
+                                onPointerCancel={handleDragHandlePointerUp}
+                                className="mt-0.5 -my-1.5 -ml-1.5 p-1.5 flex-shrink-0 text-slate-400 select-none touch-none cursor-grab active:cursor-grabbing"
+                              >
+                                ⠿
+                              </div>
+                            )}
+                            {selectionMode && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleSelectItem(item.id); }}
+                                className="mt-0.5 flex-shrink-0"
+                              >
+                                {selectedIds.includes(item.id) ? (
+                                  <CheckCircle2 className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+                                ) : (
+                                  <Circle className="w-4 h-4 text-slate-300" strokeWidth={1.5} />
+                                )}
+                              </button>
+                            )}
+
+                            <div className="flex-1">
+                              <div className="flex justify-between items-start mb-2">
+                                <h3 className={`text-sm font-light ${
+                                  item.failed ? 'text-slate-400 line-through' : item.completed ? 'text-green-700 line-through' : 'text-slate-900'
+                                }`}>{item.name}</h3>
+                                {!selectionMode && (
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
+                                      className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                                    >
+                                      <Trash2 className="w-3 h-3" strokeWidth={1.5} />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {(() => {
+                                const { level, xpInLevel, xpNeeded } = computeLevelFromXP(item.xp || 0);
+                                return (
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-xs text-slate-400">Level</span>
+                                      <span className="text-sm font-light text-blue-600">{level}{xpNeeded === null ? ' (MAX)' : ''}</span>
+                                    </div>
+                                    <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
+                                        style={{ width: `${xpNeeded ? (xpInLevel / xpNeeded) * 100 : 100}%` }}
+                                      />
+                                    </div>
+                                    <p className="text-xs text-slate-400 text-right">
+                                      {xpNeeded ? `${xpInLevel}/${xpNeeded} XP` : `${item.xp || 0} XP`}
+                                    </p>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      )}
+                    </div>
+
+                    {/* Bearbeiten/Löschen der Oberkategorie */}
+                    <div className="max-w-md mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
+                      {editingGroupId === openGroup.id ? (
+                        <input
+                          autoFocus
+                          value={editingGroupName}
+                          onChange={(e) => setEditingGroupName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              renameGroup(openGroup.id, editingGroupName);
+                              setEditingGroupId(null);
+                            }
+                            if (e.key === 'Escape') setEditingGroupId(null);
+                          }}
+                          onBlur={() => {
+                            renameGroup(openGroup.id, editingGroupName);
+                            setEditingGroupId(null);
+                          }}
+                          className="flex-1 min-w-0 text-sm text-slate-900 font-medium bg-transparent border-b border-blue-400 outline-none"
+                        />
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setEditingGroupId(openGroup.id);
+                            setEditingGroupName(openGroup.name);
+                          }}
+                          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-blue-600 transition"
+                        >
+                          <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
+                          Oberkategorie umbenennen
+                        </button>
+                      )}
+                      <button
+                        onClick={() => deleteGroup(openGroup.id, type, label, labelPlural)}
+                        className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-500 transition flex-shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        Löschen
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </>
+        )}
+      </div>
+    );
+  };
 
   // Auth guard
   if (session === undefined) {
@@ -2125,6 +2614,7 @@ export default function YuYuApp() {
   // TUGEND VIEW: Hauptseite zeigt nur Add-Feld + Oberkategorien-Liste;
   // Klick auf eine Oberkategorie klappt sie als Akkordeon-Panel auf (nur eine gleichzeitig offen).
   if (section === 'principles') {
+    const principlesGroups = itemGroups.filter(g => g.type === 'principles');
     return (
       <div className="min-h-screen bg-white p-4 sm:p-8">
         <div className="max-w-6xl mx-auto">
@@ -2133,7 +2623,7 @@ export default function YuYuApp() {
             <button
               onClick={() => {
                 setSection('hub');
-                setSelectedVirtueGroup(null);
+                setSelectedGroupId(null);
                 setSelectionMode(false);
                 setSelectedIds([]);
                 setReorderMode(false);
@@ -2146,7 +2636,7 @@ export default function YuYuApp() {
               <h1 className="text-2xl sm:text-4xl font-light text-slate-900 tracking-tight">
                 {currentCategory?.label}
               </h1>
-              <p className="text-sm text-slate-400 font-light mt-1">{virtueGroups.length} {virtueGroups.length === 1 ? 'Oberkategorie' : 'Oberkategorien'}</p>
+              <p className="text-sm text-slate-400 font-light mt-1">{principlesGroups.length} {principlesGroups.length === 1 ? 'Oberkategorie' : 'Oberkategorien'}</p>
 
               {/* Herzen: character-weite Lebensanzeige, klickbar für Verlauf + Strafaufgabe */}
               <div className="mt-3 cursor-pointer" onClick={() => setShowHeartLog(prev => !prev)}>
@@ -2157,437 +2647,12 @@ export default function YuYuApp() {
             </div>
           </div>
 
-          {/* Tugend-Oberkategorien: eigene Gruppen, in die man Tugenden einsortieren kann */}
-          <div className="mb-8 sm:mb-10">
-            <div className="max-w-sm mb-4">
-              <input
-                type="text"
-                value={newVirtueGroupName}
-                onChange={(e) => setNewVirtueGroupName(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && addVirtueGroup()}
-                placeholder="Neue Oberkategorie (z.B. Old Money)"
-                className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
-              />
-            </div>
-            {virtueGroups.length > 0 && (
-              <>
-                {/* Oberkategorien: eigene Puzzleteile, die sich zu einem großen Ganzen zusammenfügen */}
-                <div className="flex justify-center overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
-                  {(() => {
-                    const perRow = 3;
-                    const pieceWidth = 168;
-                    const pieceHeight = 128;
-                    const rows = [];
-                    for (let i = 0; i < virtueGroups.length; i += perRow) {
-                      rows.push(virtueGroups.slice(i, i + perRow));
-                    }
-                    const maxRowLength = Math.min(virtueGroups.length, perRow);
-                    const svgWidth = maxRowLength * pieceWidth + 20;
-                    const svgHeight = rows.length * pieceHeight + 20;
-
-                    return (
-                      <svg width={svgWidth} height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
-                        {rows.map((rowGroups, rowIdx) =>
-                          rowGroups.map((group, colIdx) => {
-                            const edges = {
-                              left: colIdx > 0 ? 'notch' : 'flat',
-                              right: colIdx < rowGroups.length - 1 ? 'tab' : 'flat',
-                              top: rowIdx > 0 && rows[rowIdx - 1][colIdx] ? 'notch' : 'flat',
-                              bottom: rows[rowIdx + 1] && rows[rowIdx + 1][colIdx] ? 'tab' : 'flat'
-                            };
-                            const path = puzzlePieceGridPath(pieceWidth, pieceHeight, edges);
-                            const x = 10 + colIdx * pieceWidth;
-                            const y = 10 + rowIdx * pieceHeight;
-                            const groupItems = items.filter(i => i.type === 'principles' && i.groupId === group.id);
-                            const groupXP = groupItems.reduce((sum, i) => sum + (i.xp || 0), 0);
-                            const groupLevel = computeLevelFromXP(groupXP).level;
-                            const isEditingGroup = editingVirtueGroupId === group.id;
-                            const isOpen = selectedVirtueGroup === group.id;
-
-                            const togglePiece = () => {
-                              if (isEditingGroup) return;
-                              setSelectedVirtueGroup(prev => (prev === group.id ? null : group.id));
-                              setSelectionMode(false);
-                              setSelectedIds([]);
-                              setReorderMode(false);
-                              setDraggedId(null);
-                              setDragOverId(null);
-                            };
-
-                            return (
-                              <g
-                                key={group.id}
-                                transform={`translate(${x}, ${y})`}
-                                onClick={togglePiece}
-                                className="cursor-pointer"
-                              >
-                                <path
-                                  d={path}
-                                  fill={isOpen ? '#2f4f3a' : '#fdfcf9'}
-                                  stroke="#d4af37"
-                                  strokeWidth={isOpen ? 1.25 : 0.75}
-                                  className="transition-colors"
-                                />
-                                <foreignObject x="12" y="8" width={pieceWidth - 24} height={pieceHeight - 16}>
-                                  <div className="h-full flex flex-col items-center justify-center text-center px-1">
-                                    <h3
-                                      className={`text-xs sm:text-sm font-medium leading-tight break-words ${isOpen ? '' : 'text-slate-900'}`}
-                                      style={isOpen ? { color: '#d4af37' } : undefined}
-                                    >
-                                      {group.name}
-                                    </h3>
-                                    <p
-                                      className={`text-[10px] font-light mt-1 leading-tight ${isOpen ? '' : 'text-slate-400'}`}
-                                      style={isOpen ? { color: '#d4af37', opacity: 0.75 } : undefined}
-                                    >
-                                      {groupItems.length} {groupItems.length === 1 ? 'Tugend' : 'Tugenden'} · Level {groupLevel}
-                                    </p>
-                                  </div>
-                                </foreignObject>
-                              </g>
-                            );
-                          })
-                        )}
-                      </svg>
-                    );
-                  })()}
-                </div>
-
-                {/* Aufgeklapptes Panel für die aktive Oberkategorie */}
-                {(() => {
-                  const openGroup = virtueGroups.find(g => g.id === selectedVirtueGroup);
-                  if (!openGroup) return null;
-                  return (
-                    <div key={openGroup.id} className="max-w-md mx-auto mt-6 border border-blue-200 rounded-lg overflow-hidden">
-                      <div className="px-4 pb-6 pt-4">
-                        <div className="flex items-center justify-between gap-2 mb-4">
-                          <h3 className="text-sm text-slate-900 font-medium">{openGroup.name}</h3>
-                          <button
-                            onClick={() => setSelectedVirtueGroup(null)}
-                            className="p-1.5 -m-1.5 text-slate-300 hover:text-slate-600 transition flex-shrink-0"
-                          >
-                            <X className="w-4 h-4" strokeWidth={1.5} />
-                          </button>
-                        </div>
-
-                        {/* Add Tugend - nur innerhalb der offenen Oberkategorie möglich */}
-                        <div className="mb-8 max-w-sm">
-                          <input
-                            type="text"
-                            value={newItemName}
-                            onChange={(e) => setNewItemName(e.target.value)}
-                            onKeyPress={(e) => {
-                              if (e.key === 'Enter' && newItemName.trim()) {
-                                addItem(newItemName);
-                                setNewItemName('');
-                              }
-                            }}
-                            placeholder="Tugend hinzufügen"
-                            className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
-                          />
-                        </div>
-
-                        {/* Puzzle-Piece Visualisierung */}
-                        {sectionItems.length > 0 && (
-                          <div className="mb-8 pb-6 border-b border-slate-100">
-                            <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase mb-6 sm:mb-8 text-center">
-                              Deine Tugenden fügen sich zusammen
-                            </h2>
-                            <div className="flex justify-center overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
-                              {(() => {
-                                const perRow = 3;
-                                const pieceWidth = 96;
-                                const pieceHeight = 74;
-                                const rows = [];
-                                for (let i = 0; i < sectionItems.length; i += perRow) {
-                                  rows.push(sectionItems.slice(i, i + perRow));
-                                }
-                                const maxRowLength = Math.min(sectionItems.length, perRow);
-                                const svgWidth = maxRowLength * pieceWidth + 20;
-                                const svgHeight = rows.length * pieceHeight + 20;
-
-                                return (
-                                  <svg width={svgWidth} height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
-                                    {rows.map((rowItems, rowIdx) =>
-                                      rowItems.map((item, colIdx) => {
-                                        const edges = {
-                                          left: colIdx > 0 ? 'notch' : 'flat',
-                                          right: colIdx < rowItems.length - 1 ? 'tab' : 'flat',
-                                          top: rowIdx > 0 && rows[rowIdx - 1][colIdx] ? 'notch' : 'flat',
-                                          bottom: rows[rowIdx + 1] && rows[rowIdx + 1][colIdx] ? 'tab' : 'flat'
-                                        };
-                                        const path = puzzlePieceGridPath(pieceWidth, pieceHeight, edges);
-                                        const x = 10 + colIdx * pieceWidth;
-                                        const y = 10 + rowIdx * pieceHeight;
-                                        const nameLines = wrapPuzzleText(item.name, 12);
-                                        const nameFontSize = nameLines.some(l => l.length > 10) ? 7.5 : 8.5;
-
-                                        return (
-                                          <g key={item.id} transform={`translate(${x}, ${y})`}>
-                                            <path
-                                              d={path}
-                                              fill="#fdfcf9"
-                                              stroke="#d4af37"
-                                              strokeWidth="0.75"
-                                            />
-                                            <text
-                                              x={pieceWidth / 2}
-                                              textAnchor="middle"
-                                              fill="#1e3a8a"
-                                              fontSize={nameFontSize}
-                                              fontWeight="400"
-                                              fontFamily="'Lora', serif"
-                                            >
-                                              {nameLines.map((line, i) => (
-                                                <tspan
-                                                  key={i}
-                                                  x={pieceWidth / 2}
-                                                  y={pieceHeight / 2 - 14 + i * (nameFontSize + 2)}
-                                                >
-                                                  {line}
-                                                </tspan>
-                                              ))}
-                                            </text>
-                                            <text
-                                              x={pieceWidth / 2}
-                                              y={pieceHeight / 2 + 14}
-                                              textAnchor="middle"
-                                              fill="#d4af37"
-                                              fontSize="9"
-                                              fontWeight="600"
-                                              fontFamily="'Lora', serif"
-                                            >
-                                              Lv. {computeLevelFromXP(item.xp || 0).level}
-                                            </text>
-                                            {item.createdAt && (
-                                              <text
-                                                x={pieceWidth / 2}
-                                                y={pieceHeight / 2 + 27}
-                                                textAnchor="middle"
-                                                fill="#000000"
-                                                fontSize="7"
-                                                fontWeight="400"
-                                                fontFamily="'Lora', serif"
-                                              >
-                                                {new Date(item.createdAt).toLocaleDateString('de-DE')}
-                                              </text>
-                                            )}
-                                          </g>
-                                        );
-                                      })
-                                    )}
-                                  </svg>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Items list - Tugenden ist selbst ein Toggle für die ganze Liste */}
-                        <div className="max-w-md space-y-4">
-                          <div
-                            className="flex items-center justify-between cursor-pointer"
-                            onClick={() => {
-                              setVirtuesListExpanded(prev => {
-                                const next = !prev;
-                                if (!next) {
-                                  setReorderMode(false);
-                                  setSelectionMode(false);
-                                  setSelectedIds([]);
-                                }
-                                return next;
-                              });
-                            }}
-                          >
-                            <div className="flex items-center gap-1.5">
-                              <ChevronDown
-                                className={`w-3.5 h-3.5 text-slate-400 transition-transform flex-shrink-0 ${virtuesListExpanded ? '' : '-rotate-90'}`}
-                                strokeWidth={1.5}
-                              />
-                              <h2 className="text-sm font-light text-slate-600 tracking-wide uppercase">
-                                {currentCategory?.labelPlural}
-                              </h2>
-                            </div>
-                            {virtuesListExpanded && (
-                              <div className="flex items-center gap-3">
-                                {selectionMode && selectedIds.length > 0 && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); deleteSelectedItems(); }}
-                                    className="text-xs text-red-500 hover:text-red-600 font-light transition"
-                                  >
-                                    Löschen ({selectedIds.length})
-                                  </button>
-                                )}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setReorderMode(!reorderMode);
-                                    setSelectionMode(false);
-                                    setSelectedIds([]);
-                                  }}
-                                  className={`text-xs font-light tracking-wide transition ${
-                                    reorderMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
-                                  }`}
-                                >
-                                  {reorderMode ? 'Fertig' : 'Neu anordnen'}
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectionMode(!selectionMode);
-                                    setSelectedIds([]);
-                                    setReorderMode(false);
-                                  }}
-                                  className={`text-xs font-light tracking-wide transition ${
-                                    selectionMode ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'
-                                  }`}
-                                >
-                                  {selectionMode ? 'Fertig' : 'Auswählen'}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
-                          {virtuesListExpanded && reorderMode && (
-                            <p className="text-xs text-slate-400 font-light -mt-2">Am Griff ziehen, um die Reihenfolge zu ändern</p>
-                          )}
-
-                          {virtuesListExpanded && (
-                          <div className="space-y-4">
-                            {sectionItems.map((item) => (
-                              <div
-                                key={item.id}
-                                data-item-id={item.id}
-                                className={`group flex items-start gap-3 transition ${
-                                  selectionMode ? 'cursor-pointer' : ''
-                                } ${
-                                  draggedId === item.id ? 'opacity-40' : 'opacity-100'
-                                } ${
-                                  reorderMode && dragOverId === item.id && draggedId !== item.id
-                                    ? 'outline outline-2 outline-blue-300 rounded-lg'
-                                    : ''
-                                }`}
-                                onClick={(e) => { e.stopPropagation(); selectionMode && toggleSelectItem(item.id); }}
-                              >
-                                {reorderMode && (
-                                  <div
-                                    onPointerDown={(e) => handleDragHandlePointerDown(e, item.id)}
-                                    onPointerMove={handleDragHandlePointerMove}
-                                    onPointerUp={handleDragHandlePointerUp}
-                                    onPointerCancel={handleDragHandlePointerUp}
-                                    className="mt-0.5 -my-1.5 -ml-1.5 p-1.5 flex-shrink-0 text-slate-400 select-none touch-none cursor-grab active:cursor-grabbing"
-                                  >
-                                    ⠿
-                                  </div>
-                                )}
-                                {selectionMode && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); toggleSelectItem(item.id); }}
-                                    className="mt-0.5 flex-shrink-0"
-                                  >
-                                    {selectedIds.includes(item.id) ? (
-                                      <CheckCircle2 className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
-                                    ) : (
-                                      <Circle className="w-4 h-4 text-slate-300" strokeWidth={1.5} />
-                                    )}
-                                  </button>
-                                )}
-
-                                <div className="flex-1">
-                                  <div className="flex justify-between items-start mb-2">
-                                    <h3 className={`text-sm font-light ${
-                                      item.failed ? 'text-slate-400 line-through' : item.completed ? 'text-green-700 line-through' : 'text-slate-900'
-                                    }`}>{item.name}</h3>
-                                    {!selectionMode && (
-                                      <div className="flex items-center gap-1">
-                                        <button
-                                          onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
-                                          className="p-1.5 -m-1.5 text-slate-300 hover:text-red-500 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                                        >
-                                          <Trash2 className="w-3 h-3" strokeWidth={1.5} />
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {(() => {
-                                    const { level, xpInLevel, xpNeeded } = computeLevelFromXP(item.xp || 0);
-                                    return (
-                                      <div className="space-y-2">
-                                        <div className="flex justify-between items-center">
-                                          <span className="text-xs text-slate-400">Level</span>
-                                          <span className="text-sm font-light text-blue-600">{level}{xpNeeded === null ? ' (MAX)' : ''}</span>
-                                        </div>
-                                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                                          <div
-                                            className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
-                                            style={{ width: `${xpNeeded ? (xpInLevel / xpNeeded) * 100 : 100}%` }}
-                                          />
-                                        </div>
-                                        <p className="text-xs text-slate-400 text-right">
-                                          {xpNeeded ? `${xpInLevel}/${xpNeeded} XP` : `${item.xp || 0} XP`}
-                                        </p>
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                          )}
-                        </div>
-
-                        {/* Bearbeiten/Löschen der Oberkategorie - unterhalb der Tugenden-Liste */}
-                        <div className="max-w-md mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
-                          {editingVirtueGroupId === openGroup.id ? (
-                            <input
-                              autoFocus
-                              value={editingVirtueGroupName}
-                              onChange={(e) => setEditingVirtueGroupName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  renameVirtueGroup(openGroup.id, editingVirtueGroupName);
-                                  setEditingVirtueGroupId(null);
-                                }
-                                if (e.key === 'Escape') setEditingVirtueGroupId(null);
-                              }}
-                              onBlur={() => {
-                                renameVirtueGroup(openGroup.id, editingVirtueGroupName);
-                                setEditingVirtueGroupId(null);
-                              }}
-                              className="flex-1 min-w-0 text-sm text-slate-900 font-medium bg-transparent border-b border-blue-400 outline-none"
-                            />
-                          ) : (
-                            <button
-                              onClick={() => {
-                                setEditingVirtueGroupId(openGroup.id);
-                                setEditingVirtueGroupName(openGroup.name);
-                              }}
-                              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-blue-600 transition"
-                            >
-                              <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
-                              Oberkategorie umbenennen
-                            </button>
-                          )}
-                          <button
-                            onClick={() => deleteVirtueGroup(openGroup.id)}
-                            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-500 transition flex-shrink-0"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                            Löschen
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </>
-            )}
-          </div>
+          {renderGroupedSection('principles', 'Tugend', 'Tugenden', 'Gesamtlevel')}
         </div>
       </div>
     );
   }
+
 
   // LEBENSBEREICH VIEW: vier feste Bereiche als Viertel eines großen Herzens; jedes Viertel
   // klickbar für eine Pop-up-Detailseite. Jeder Bereich sammelt XP durch abgeschlossene
@@ -2634,6 +2699,48 @@ export default function YuYuApp() {
                 />
               </div>
             </div>
+
+            {openArea.name === 'Persönlich' && (
+              <div className="max-w-sm mb-8 pb-8 border-b border-slate-100 space-y-5">
+                {[
+                  { type: 'principles', label: 'Tugenden', levelLabel: 'Gesamtlevel' },
+                  { type: 'habits', label: 'Gewohnheiten', levelLabel: 'Gesamtlevel' },
+                  { type: 'skills', label: 'Fähigkeiten', levelLabel: 'Bildungslevel' },
+                ].map(({ type, label, levelLabel }) => {
+                  const groups = itemGroups.filter(g => g.type === type);
+                  if (groups.length === 0) return null;
+                  return (
+                    <div key={type}>
+                      <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">{label}</p>
+                      <div className="space-y-1">
+                        {groups.map(g => {
+                          const groupXP = items.filter(i => i.type === type && i.groupId === g.id).reduce((sum, i) => sum + (i.xp || 0), 0);
+                          const level = computeLevelFromXP(groupXP).level;
+                          return (
+                            <button
+                              key={g.id}
+                              type="button"
+                              onClick={() => {
+                                setSection(type === 'principles' ? 'principles' : 'skills');
+                                if (type !== 'principles') setSkillsTab(type);
+                                setSelectedGroupId(g.id);
+                                setSelectionMode(false);
+                                setSelectedIds([]);
+                                setReorderMode(false);
+                              }}
+                              className="flex justify-between items-center w-full text-sm text-slate-700 hover:text-blue-600 transition"
+                            >
+                              <span>{g.name}</span>
+                              <span className="text-slate-400 text-xs">{levelLabel} {level}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {openArea.name === 'Arbeit' && (
               <div className="max-w-sm mb-8 pb-8 border-b border-slate-100">
@@ -2840,7 +2947,13 @@ export default function YuYuApp() {
         {/* Header */}
         <div className="flex items-start gap-3 sm:gap-6 mb-6 pb-4 sm:mb-12 sm:pb-8 border-b border-slate-200">
           <button
-            onClick={() => setSection('hub')}
+            onClick={() => {
+              setSection('hub');
+              setSelectedGroupId(null);
+              setSelectionMode(false);
+              setSelectedIds([]);
+              setReorderMode(false);
+            }}
             className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
           >
             <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
@@ -2849,7 +2962,14 @@ export default function YuYuApp() {
             <h1 className="text-2xl sm:text-4xl font-light text-slate-900 tracking-tight">
               {activeCategory?.label}
             </h1>
-            <p className="text-sm text-slate-400 font-light mt-1">{sectionItems.length} {sectionItems.length === 1 ? activeCategory?.label : activeCategory?.labelPlural}</p>
+            <p className="text-sm text-slate-400 font-light mt-1">
+              {section === 'skills'
+                ? (() => {
+                    const groupCount = itemGroups.filter(g => g.type === skillsTab).length;
+                    return `${groupCount} ${groupCount === 1 ? 'Oberkategorie' : 'Oberkategorien'}`;
+                  })()
+                : `${sectionItems.length} ${sectionItems.length === 1 ? activeCategory?.label : activeCategory?.labelPlural}`}
+            </p>
           </div>
         </div>
 
@@ -2861,6 +2981,7 @@ export default function YuYuApp() {
                 key={tab.id}
                 onClick={() => {
                   setSkillsTab(tab.id);
+                  setSelectedGroupId(null);
                   setSelectionMode(false);
                   setSelectedIds([]);
                   setReorderMode(false);
@@ -2877,6 +2998,15 @@ export default function YuYuApp() {
           </div>
         )}
 
+        {section === 'skills' ? (
+          renderGroupedSection(
+            skillsTab,
+            activeCategory?.label,
+            activeCategory?.labelPlural,
+            skillsTab === 'skills' ? 'Bildungslevel' : 'Gesamtlevel'
+          )
+        ) : (
+        <>
         {/* Add new */}
         <div className="mb-8 sm:mb-10 max-w-sm">
           {section === 'goals' ? (
@@ -2884,7 +3014,8 @@ export default function YuYuApp() {
               virtues={allVirtueItems}
               skills={allSkillItems}
               lifeAreas={allLifeAreaItems}
-              virtueGroups={virtueGroups}
+              virtueGroups={itemGroups.filter(g => g.type === 'principles')}
+              skillGroups={itemGroups.filter(g => g.type === 'skills')}
               onCreateVirtue={createAndLinkVirtue}
               onCreateSkill={createAndLinkSkill}
               onSubmit={({ lifeAreaId, learningGoal, title, problem, description, linkedIds, linkedSkillIds }) =>
@@ -3106,6 +3237,8 @@ export default function YuYuApp() {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
