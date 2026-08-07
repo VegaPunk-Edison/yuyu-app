@@ -3022,43 +3022,6 @@ export default function YuYuApp() {
               </div>
             </div>
 
-            {openArea.name === 'Persönlich' && (
-              <div className="max-w-sm mb-8 pb-8 border-b border-slate-100 space-y-5">
-                {[
-                  { type: 'principles', label: 'Tugenden' },
-                  { type: 'habits', label: 'Gewohnheiten' },
-                  { type: 'skills', label: 'Fähigkeiten' },
-                ].map(({ type, label }) => {
-                  const groups = itemGroups.filter(g => g.type === type);
-                  if (groups.length === 0) return null;
-                  return (
-                    <div key={type}>
-                      <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">{label}</p>
-                      <div className="space-y-1">
-                        {groups.map(g => (
-                          <button
-                            key={g.id}
-                            type="button"
-                            onClick={() => {
-                              setSection(type === 'principles' ? 'principles' : 'skills');
-                              if (type !== 'principles') setSkillsTab(type);
-                              setSelectedGroupId(g.id);
-                              setSelectionMode(false);
-                              setSelectedIds([]);
-                              setReorderMode(false);
-                            }}
-                            className="text-left w-full text-sm text-slate-700 hover:text-blue-600 transition"
-                          >
-                            {g.name}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
             {openArea.name === 'Arbeit' && (
               <div className="max-w-sm mb-8 pb-8 border-b border-slate-100">
                 {(!employerLink?.job_title || editingEmployerLink) ? (
