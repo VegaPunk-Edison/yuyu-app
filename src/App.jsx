@@ -1137,6 +1137,9 @@ export default function YuYuApp() {
   const [editingPenaltyTask, setEditingPenaltyTask] = useState(false);
   const [penaltyTaskDraft, setPenaltyTaskDraft] = useState('');
   const [selectedLifeAreaId, setSelectedLifeAreaId] = useState(null);
+  // Merkt sich pro Lebensbereich, wodurch er zuletzt XP bekommen hat (für die Detailseite) -
+  // { [lifeAreaId]: { label, at } }, rein lokal, kein PIFA-Äquivalent.
+  const [lifeAreaXPSource, setLifeAreaXPSource] = useState(() => loadJSON('yuyu-life-area-xp-source', {}));
   const [skillsTab, setSkillsTab] = useState('habits');
   const [employers, setEmployers] = useState([]);
   const [employerLink, setEmployerLink] = useState(null);
@@ -1323,7 +1326,7 @@ export default function YuYuApp() {
   // hätte, und würde die gerade geladenen/migrierten Daten wieder mit leeren Arrays überschreiben.
   useEffect(() => {
     saveData();
-  }, [items, todos, itemGroups, hearts, heartLog, penaltyTask, section]);
+  }, [items, todos, itemGroups, hearts, heartLog, penaltyTask, section, lifeAreaXPSource]);
 
   // Bei 0 Herzen ist nur noch der Aufgaben-Bereich zugänglich (Strafaufgabe muss zuerst erledigt werden)
   useEffect(() => {
@@ -1340,6 +1343,7 @@ export default function YuYuApp() {
     localStorage.setItem('yuyu-heart-log', JSON.stringify(heartLog));
     localStorage.setItem('yuyu-penalty-task', JSON.stringify(penaltyTask));
     localStorage.setItem('yuyu-section', JSON.stringify(section));
+    localStorage.setItem('yuyu-life-area-xp-source', JSON.stringify(lifeAreaXPSource));
   };
 
   // Backup: alle Daten als JSON-Datei herunterladen, da nichts außerhalb dieses Browsers gespeichert wird
@@ -1694,7 +1698,7 @@ export default function YuYuApp() {
     setTodos(todos.map(t => (t.id === todoId ? { ...t, completed: true } : t)));
     gainVirtueXP(todo.linkedItems || []);
     gainHeart(`Aufgabe erledigt: "${todo.text}"`);
-    gainLifeAreaXP(todo.lifeAreaId);
+    gainLifeAreaXP(todo.lifeAreaId, `Aufgabe "${todo.text}" erledigt`);
     gainSkillXP(todo.linkedSkillIds || []);
   };
 
@@ -1726,10 +1730,14 @@ export default function YuYuApp() {
   };
 
   // Lebensbereich sammelt XP durch Beteiligung an Zielen/Aufgaben; Level wird aus der kumulierten
-  // xp per computeLevelFromXP abgeleitet, nicht mehr separat mitgeführt.
-  const gainLifeAreaXP = (lifeAreaId) => {
+  // xp per computeLevelFromXP abgeleitet, nicht mehr separat mitgeführt. sourceLabel wird für die
+  // "letzte XP-Quelle"-Anzeige auf der Lebensbereich-Detailseite gemerkt.
+  const gainLifeAreaXP = (lifeAreaId, sourceLabel) => {
     if (!lifeAreaId) return;
     setItems(prev => prev.map(i => (i.id === lifeAreaId ? { ...i, xp: (i.xp || 0) + LIFE_AREA_XP_PER_COMPLETION } : i)));
+    if (sourceLabel) {
+      setLifeAreaXPSource(prev => ({ ...prev, [lifeAreaId]: { label: sourceLabel, at: new Date().toISOString() } }));
+    }
   };
 
   // Job + Arbeitgeber für den Lebensbereich "Arbeit": Arbeitgeber kommt aus der kuratierten
@@ -1808,7 +1816,7 @@ export default function YuYuApp() {
     }
     setItems(prev => prev.map(i => (i.id === id ? { ...i, completed: true } : i)));
     gainVirtueXP(item.linkedItems || []);
-    gainLifeAreaXP(item.lifeAreaId);
+    gainLifeAreaXP(item.lifeAreaId, `Ziel "${item.name}" erreicht`);
     gainSkillXP(item.linkedSkillIds || []);
   };
 
@@ -3017,38 +3025,33 @@ export default function YuYuApp() {
             {openArea.name === 'Persönlich' && (
               <div className="max-w-sm mb-8 pb-8 border-b border-slate-100 space-y-5">
                 {[
-                  { type: 'principles', label: 'Tugenden', levelLabel: 'Lvl' },
-                  { type: 'habits', label: 'Gewohnheiten', levelLabel: 'Lvl' },
-                  { type: 'skills', label: 'Fähigkeiten', levelLabel: 'Lvl' },
-                ].map(({ type, label, levelLabel }) => {
+                  { type: 'principles', label: 'Tugenden' },
+                  { type: 'habits', label: 'Gewohnheiten' },
+                  { type: 'skills', label: 'Fähigkeiten' },
+                ].map(({ type, label }) => {
                   const groups = itemGroups.filter(g => g.type === type);
                   if (groups.length === 0) return null;
                   return (
                     <div key={type}>
                       <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">{label}</p>
                       <div className="space-y-1">
-                        {groups.map(g => {
-                          const groupXP = items.filter(i => i.type === type && i.groupId === g.id).reduce((sum, i) => sum + (i.xp || 0), 0);
-                          const level = computeLevelFromXP(groupXP).level;
-                          return (
-                            <button
-                              key={g.id}
-                              type="button"
-                              onClick={() => {
-                                setSection(type === 'principles' ? 'principles' : 'skills');
-                                if (type !== 'principles') setSkillsTab(type);
-                                setSelectedGroupId(g.id);
-                                setSelectionMode(false);
-                                setSelectedIds([]);
-                                setReorderMode(false);
-                              }}
-                              className="flex justify-between items-center w-full text-sm text-slate-700 hover:text-blue-600 transition"
-                            >
-                              <span>{g.name}</span>
-                              <span className="text-slate-400 text-xs">{levelLabel} {level}</span>
-                            </button>
-                          );
-                        })}
+                        {groups.map(g => (
+                          <button
+                            key={g.id}
+                            type="button"
+                            onClick={() => {
+                              setSection(type === 'principles' ? 'principles' : 'skills');
+                              if (type !== 'principles') setSkillsTab(type);
+                              setSelectedGroupId(g.id);
+                              setSelectionMode(false);
+                              setSelectedIds([]);
+                              setReorderMode(false);
+                            }}
+                            className="text-left w-full text-sm text-slate-700 hover:text-blue-600 transition"
+                          >
+                            {g.name}
+                          </button>
+                        ))}
                       </div>
                     </div>
                   );
@@ -3123,46 +3126,49 @@ export default function YuYuApp() {
               </div>
             )}
 
-            {(linkedGoals.length > 0 || linkedTodos.length > 0) ? (
-              <div className="max-w-md space-y-4">
-                {linkedGoals.length > 0 && (
-                  <div>
-                    <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Ziele</p>
-                    <div className="space-y-1">
-                      {linkedGoals.map(g => (
-                        <p
-                          key={g.id}
-                          className={`text-sm font-light ${
-                            g.completed ? 'text-green-700 line-through' : g.failed ? 'text-slate-400 line-through' : 'text-slate-900'
-                          }`}
-                        >
-                          {g.name}
-                        </p>
-                      ))}
+            {(() => {
+              // Projekt: ein verknüpftes Ziel - bevorzugt ein noch aktives (weder erledigt noch gescheitert)
+              const project = linkedGoals.find(g => !g.completed && !g.failed) || linkedGoals[0];
+              // Aktuelle Aufgaben: nur offene, auf 3 begrenzt
+              const currentTodos = linkedTodos.filter(t => !t.completed && !t.failed).slice(0, 3);
+              const xpSource = lifeAreaXPSource[openArea.id];
+
+              if (!project && currentTodos.length === 0 && !xpSource) {
+                return <p className="text-sm text-slate-400 font-light max-w-md">Noch keine verknüpften Ziele oder Aufgaben.</p>;
+              }
+              return (
+                <div className="max-w-md space-y-4">
+                  {project && (
+                    <div>
+                      <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Projekt</p>
+                      <p
+                        className={`text-sm font-light ${
+                          project.completed ? 'text-green-700 line-through' : project.failed ? 'text-slate-400 line-through' : 'text-slate-900'
+                        }`}
+                      >
+                        {project.name}
+                      </p>
                     </div>
-                  </div>
-                )}
-                {linkedTodos.length > 0 && (
-                  <div>
-                    <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Aufgaben</p>
-                    <div className="space-y-1">
-                      {linkedTodos.map(t => (
-                        <p
-                          key={t.id}
-                          className={`text-sm font-light ${
-                            t.completed ? 'text-green-700 line-through' : t.failed ? 'text-slate-400 line-through' : 'text-slate-900'
-                          }`}
-                        >
-                          {t.text}
-                        </p>
-                      ))}
+                  )}
+                  {currentTodos.length > 0 && (
+                    <div>
+                      <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Aktuelle Aufgaben</p>
+                      <div className="space-y-1">
+                        {currentTodos.map(t => (
+                          <p key={t.id} className="text-sm font-light text-slate-900">{t.text}</p>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-400 font-light max-w-md">Noch keine verknüpften Ziele oder Aufgaben.</p>
-            )}
+                  )}
+                  {xpSource && (
+                    <div>
+                      <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Letzte XP-Quelle</p>
+                      <p className="text-sm font-light text-slate-900">{xpSource.label}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       );
