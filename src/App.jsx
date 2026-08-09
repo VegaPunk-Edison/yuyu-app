@@ -738,6 +738,281 @@ function GoalMilestones({ goal, onAdd, onToggle, onDelete }) {
   );
 }
 
+// Detail-/Bearbeiten-Dialog für ein bestehendes Ziel - Titel, Problem, Ausgang,
+// Tugenden/Fähigkeiten/Gewohnheiten und Lebensbereich lassen sich hier nachträglich
+// ändern (bei der Erstellung im GoalForm-Wizard schon möglich, hier zusätzlich editierbar),
+// dazu Meilensteine und alle mit diesem Ziel verknüpften Aufgaben.
+function GoalDetailModal({ goal, virtues, skills, habits, lifeAreas, todos, onSave, onClose, onDelete, onAddMilestone, onToggleMilestone, onDeleteMilestone, onLinkTodo, onUnlinkTodo }) {
+  const [title, setTitle] = useState(goal.title || goal.name || '');
+  const [problem, setProblem] = useState(goal.problem || '');
+  const [description, setDescription] = useState(goal.description || '');
+  const [linkedItems, setLinkedItems] = useState(goal.linkedItems || []);
+  const [linkedSkillIds, setLinkedSkillIds] = useState(goal.linkedSkillIds || []);
+  const [linkedHabitIds, setLinkedHabitIds] = useState(goal.linkedHabitIds || []);
+  const [lifeAreaId, setLifeAreaId] = useState(goal.lifeAreaId || null);
+  const [virtueInput, setVirtueInput] = useState('');
+  const [skillInput, setSkillInput] = useState('');
+  const [habitInput, setHabitInput] = useState('');
+  const [todoInput, setTodoInput] = useState('');
+
+  const virtueSuggestions = virtueInput
+    ? virtues.filter(v => v.name.toLowerCase().includes(virtueInput.toLowerCase()) && !linkedItems.includes(v.id)).slice(0, 5)
+    : [];
+  const skillSuggestions = skillInput
+    ? skills.filter(s => s.name.toLowerCase().includes(skillInput.toLowerCase()) && !linkedSkillIds.includes(s.id)).slice(0, 5)
+    : [];
+  const habitSuggestions = habitInput
+    ? habits.filter(h => h.name.toLowerCase().includes(habitInput.toLowerCase()) && !linkedHabitIds.includes(h.id)).slice(0, 5)
+    : [];
+
+  const linkedTodos = todos.filter(t => t.goalId === goal.id);
+  const todoSuggestions = todoInput
+    ? todos.filter(t => t.goalId !== goal.id && !t.completed && !t.failed && t.text.toLowerCase().includes(todoInput.toLowerCase())).slice(0, 5)
+    : [];
+
+  const addVirtue = (v) => { setLinkedItems(prev => (prev.includes(v.id) ? prev : [...prev, v.id])); setVirtueInput(''); };
+  const removeVirtue = (id) => setLinkedItems(prev => prev.filter(i => i !== id));
+  const addSkill = (s) => { setLinkedSkillIds(prev => (prev.includes(s.id) ? prev : [...prev, s.id])); setSkillInput(''); };
+  const removeSkill = (id) => setLinkedSkillIds(prev => prev.filter(i => i !== id));
+  const addHabit = (h) => { setLinkedHabitIds(prev => (prev.includes(h.id) ? prev : [...prev, h.id])); setHabitInput(''); };
+  const removeHabit = (id) => setLinkedHabitIds(prev => prev.filter(i => i !== id));
+
+  const handleSave = () => {
+    if (!title.trim()) return;
+    onSave({ title, problem, description, linkedItems, linkedSkillIds, linkedHabitIds, lifeAreaId });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div
+        className="bg-white w-full sm:max-w-md sm:rounded-xl rounded-t-2xl p-5 sm:p-6 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-light text-slate-900">Ziel</h3>
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600">
+            <X className="w-5 h-5" strokeWidth={1.5} />
+          </button>
+        </div>
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Titel</label>
+        <input
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full mb-4 text-sm text-slate-900 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5"
+        />
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Problem</label>
+        <textarea
+          value={problem}
+          onChange={(e) => setProblem(e.target.value)}
+          rows={2}
+          placeholder="Welches Problem löst du? (optional)"
+          className="w-full mb-4 text-sm text-slate-900 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5 resize-none"
+        />
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Ausgang</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          placeholder="Was ist dein gewünschter Ausgang? (optional)"
+          className="w-full mb-4 text-sm text-slate-900 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5 resize-none"
+        />
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Tugenden</label>
+        {linkedItems.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {linkedItems.map(id => {
+              const v = virtues.find(vv => vv.id === id);
+              if (!v) return null;
+              return (
+                <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
+                  {v.name}
+                  <button type="button" onClick={() => removeVirtue(id)} className="hover:text-blue-900">
+                    <X className="w-3 h-3" strokeWidth={2} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="relative mb-4">
+          <input
+            value={virtueInput}
+            onChange={(e) => setVirtueInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && virtueSuggestions[0]) { e.preventDefault(); addVirtue(virtueSuggestions[0]); } }}
+            placeholder="Tugend hinzufügen…"
+            className="w-full text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5"
+          />
+          {virtueSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {virtueSuggestions.map(v => (
+                <button key={v.id} type="button" onMouseDown={(e) => { e.preventDefault(); addVirtue(v); }} className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition">
+                  {v.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Fähigkeiten</label>
+        {linkedSkillIds.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {linkedSkillIds.map(id => {
+              const s = skills.find(ss => ss.id === id);
+              if (!s) return null;
+              return (
+                <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-50 text-violet-700 text-xs rounded-full">
+                  {s.name}
+                  <button type="button" onClick={() => removeSkill(id)} className="hover:text-violet-900">
+                    <X className="w-3 h-3" strokeWidth={2} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="relative mb-4">
+          <input
+            value={skillInput}
+            onChange={(e) => setSkillInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && skillSuggestions[0]) { e.preventDefault(); addSkill(skillSuggestions[0]); } }}
+            placeholder="Fähigkeit hinzufügen…"
+            className="w-full text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5"
+          />
+          {skillSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {skillSuggestions.map(s => (
+                <button key={s.id} type="button" onMouseDown={(e) => { e.preventDefault(); addSkill(s); }} className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition">
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Gewohnheiten</label>
+        {linkedHabitIds.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {linkedHabitIds.map(id => {
+              const h = habits.find(hh => hh.id === id);
+              if (!h) return null;
+              return (
+                <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs rounded-full">
+                  {h.name}
+                  <button type="button" onClick={() => removeHabit(id)} className="hover:text-emerald-900">
+                    <X className="w-3 h-3" strokeWidth={2} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="relative mb-4">
+          <input
+            value={habitInput}
+            onChange={(e) => setHabitInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && habitSuggestions[0]) { e.preventDefault(); addHabit(habitSuggestions[0]); } }}
+            placeholder="Gewohnheit hinzufügen…"
+            className="w-full text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5"
+          />
+          {habitSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {habitSuggestions.map(h => (
+                <button key={h.id} type="button" onMouseDown={(e) => { e.preventDefault(); addHabit(h); }} className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition">
+                  {h.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Lebensbereich</label>
+        <select
+          value={lifeAreaId != null ? String(lifeAreaId) : ''}
+          onChange={(e) => setLifeAreaId(e.target.value ? Number(e.target.value) : null)}
+          className="w-full mb-4 text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5 bg-white"
+        >
+          <option value="">Kein Lebensbereich</option>
+          {lifeAreas.map(a => (
+            <option key={a.id} value={String(a.id)}>{a.name}</option>
+          ))}
+        </select>
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Meilensteine</label>
+        <div className="mb-4">
+          <GoalMilestones goal={goal} onAdd={onAddMilestone} onToggle={onToggleMilestone} onDelete={onDeleteMilestone} />
+        </div>
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Verknüpfte Aufgaben</label>
+        {linkedTodos.length > 0 && (
+          <div className="space-y-1 mb-1.5">
+            {linkedTodos.map(t => (
+              <div key={t.id} className="flex items-center gap-2 group/todo">
+                {t.completed ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" strokeWidth={1.5} />
+                ) : (
+                  <Circle className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" strokeWidth={1.5} />
+                )}
+                <span className={`flex-1 text-xs font-light ${t.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                  {t.text}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onUnlinkTodo(t.id)}
+                  className="p-1 -m-1 text-slate-300 hover:text-red-500 transition opacity-0 group-hover/todo:opacity-100 flex-shrink-0"
+                  title="Verknüpfung entfernen"
+                >
+                  <X className="w-3 h-3" strokeWidth={2} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="relative mb-6">
+          <input
+            value={todoInput}
+            onChange={(e) => setTodoInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && todoSuggestions[0]) { e.preventDefault(); onLinkTodo(todoSuggestions[0].id); setTodoInput(''); } }}
+            placeholder="Aufgabe verknüpfen…"
+            className="w-full text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5"
+          />
+          {todoSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {todoSuggestions.map(t => (
+                <button key={t.id} type="button" onMouseDown={(e) => { e.preventDefault(); onLinkTodo(t.id); setTodoInput(''); }} className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition">
+                  {t.text}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => { onDelete(); onClose(); }}
+            className="text-xs text-red-400 hover:text-red-600 transition"
+          >
+            Löschen
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!title.trim()}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition disabled:opacity-40"
+          >
+            Speichern
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Aufgabe anlegen: ein einziges Textfeld wandert per Enter durch die Stufen
 // Aufgabe -> Tugend(en, mehrfach möglich) -> Gewohnheit -> Lebensbereich.
 // Leeres Enter überspringt die aktuelle (optionale) Stufe.
@@ -1038,12 +1313,13 @@ function TodoWizardInput({ virtues, skills, habits, lifeAreas, onSubmit, placeho
 // Detail-/Bearbeiten-Dialog für eine bestehende Aufgabe - anders als TodoWizardInput (Erstellung,
 // gestuft) zeigt dieser alle Felder gleichzeitig, da beim Bearbeiten meist gezielt ein einzelnes
 // Feld geändert wird, nicht die ganze Reihe von vorn durchlaufen werden soll.
-function TodoDetailModal({ todo, virtues, skills, habits, lifeAreas, onSave, onClose, onDelete }) {
+function TodoDetailModal({ todo, virtues, skills, habits, lifeAreas, goals, onSave, onClose, onDelete }) {
   const [text, setText] = useState(todo.text);
   const [linkedItems, setLinkedItems] = useState(todo.linkedItems || []);
   const [linkedSkillIds, setLinkedSkillIds] = useState(todo.linkedSkillIds || []);
   const [linkedHabitIds, setLinkedHabitIds] = useState(todo.linkedHabitIds || []);
   const [lifeAreaId, setLifeAreaId] = useState(todo.lifeAreaId || null);
+  const [goalId, setGoalId] = useState(todo.goalId || null);
   const [virtueInput, setVirtueInput] = useState('');
   const [skillInput, setSkillInput] = useState('');
   const [habitInput, setHabitInput] = useState('');
@@ -1067,7 +1343,7 @@ function TodoDetailModal({ todo, virtues, skills, habits, lifeAreas, onSave, onC
 
   const handleSave = () => {
     if (!text.trim()) return;
-    onSave({ text, linkedItems, linkedSkillIds, linkedHabitIds, lifeAreaId });
+    onSave({ text, linkedItems, linkedSkillIds, linkedHabitIds, lifeAreaId, goalId });
     onClose();
   };
 
@@ -1204,11 +1480,23 @@ function TodoDetailModal({ todo, virtues, skills, habits, lifeAreas, onSave, onC
         <select
           value={lifeAreaId != null ? String(lifeAreaId) : ''}
           onChange={(e) => setLifeAreaId(e.target.value ? Number(e.target.value) : null)}
-          className="w-full mb-6 text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5 bg-white"
+          className="w-full mb-4 text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5 bg-white"
         >
           <option value="">Kein Lebensbereich</option>
           {lifeAreas.map(a => (
             <option key={a.id} value={String(a.id)}>{a.name}</option>
+          ))}
+        </select>
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Ziel</label>
+        <select
+          value={goalId != null ? String(goalId) : ''}
+          onChange={(e) => setGoalId(e.target.value || null)}
+          className="w-full mb-6 text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5 bg-white"
+        >
+          <option value="">Kein Ziel</option>
+          {goals.map(g => (
+            <option key={g.id} value={String(g.id)}>{g.title || g.name}</option>
           ))}
         </select>
 
@@ -1438,6 +1726,7 @@ export default function YuYuApp() {
   const [editingGroupId, setEditingGroupId] = useState(null);
   const [editingGroupName, setEditingGroupName] = useState('');
   const [detailTodoId, setDetailTodoId] = useState(null);
+  const [detailGoalId, setDetailGoalId] = useState(null);
   const [hearts, setHearts] = useState(() => loadJSON('yuyu-hearts', MAX_HEARTS));
   const [heartLog, setHeartLog] = useState(() => loadJSON('yuyu-heart-log', []));
   const [penaltyTask, setPenaltyTask] = useState(() => loadJSON('yuyu-penalty-task', ''));
@@ -1627,6 +1916,7 @@ export default function YuYuApp() {
           habit: t.habit || '',
           lifeAreaId: t.life_area ? (localLifeAreas.find(a => a.name === t.life_area)?.id ?? null) : null,
           life_area: t.life_area || '',
+          goalId: t.goal_id || null,
           createdAt: t.created_at,
         }));
         setTodos(remoteTodos);
@@ -2009,6 +2299,7 @@ export default function YuYuApp() {
         linked_items: linkedVirtues,
         linked_skill_ids: extra.linkedSkillIds || [],
         linked_habit_ids: extra.linkedHabitIds || [],
+        goal_id: extra.goalId || null,
       }).select().single();
       if (data) {
         setTodos(prev => [...prev, {
@@ -2021,6 +2312,7 @@ export default function YuYuApp() {
           habit: data.habit || '',
           lifeAreaId: extra.lifeAreaId || null,
           life_area: data.life_area || '',
+          goalId: extra.goalId || null,
           createdAt: data.created_at,
         }]);
       }
@@ -2035,6 +2327,7 @@ export default function YuYuApp() {
       linkedHabitIds: extra.linkedHabitIds || [],
       habit: '',
       lifeAreaId: extra.lifeAreaId || null,
+      goalId: extra.goalId || null,
       createdAt: new Date().toISOString(),
     }]);
   };
@@ -2288,6 +2581,7 @@ export default function YuYuApp() {
         linked_items: updates.linkedItems || [],
         linked_skill_ids: updates.linkedSkillIds || [],
         linked_habit_ids: updates.linkedHabitIds || [],
+        goal_id: updates.goalId || null,
         updated_at: new Date().toISOString(),
       }).eq('id', todoId);
     }
@@ -2299,7 +2593,50 @@ export default function YuYuApp() {
       linkedItems: updates.linkedItems || [],
       linkedSkillIds: updates.linkedSkillIds || [],
       linkedHabitIds: updates.linkedHabitIds || [],
+      goalId: updates.goalId || null,
     } : t)));
+  };
+
+  // Verknüpft/löst eine Aufgabe von einem Ziel, ohne die übrigen Felder der Aufgabe anzufassen -
+  // genutzt von der Ziel-Detailansicht zum Hinzufügen/Entfernen bestehender Aufgaben.
+  const setTodoGoalLink = async (todoId, goalId) => {
+    if (session) {
+      await sb.from('yuyu_todos').update({ goal_id: goalId, updated_at: new Date().toISOString() }).eq('id', todoId);
+    }
+    setTodos(prev => prev.map(t => (t.id === todoId ? { ...t, goalId } : t)));
+  };
+
+  // Speichert alle bearbeitbaren Felder eines Ziels auf einmal (Titel, Problem, Ausgang,
+  // verknüpfte Tugenden/Fähigkeiten/Gewohnheiten, Lebensbereich) - genutzt vom Ziel-Detail-Dialog.
+  const updateGoalDetails = async (goalId, updates) => {
+    if (!updates.title || !updates.title.trim()) return;
+    const lifeAreaName = updates.lifeAreaId
+      ? allLifeAreaItems.find(a => a.id === updates.lifeAreaId)?.name || null
+      : null;
+    if (session) {
+      await sb.from('yuyu_goals').update({
+        title: updates.title.trim(),
+        problem: (updates.problem || '').trim() || null,
+        description: (updates.description || '').trim() || null,
+        life_area: lifeAreaName,
+        linked_items: updates.linkedItems || [],
+        linked_skill_ids: updates.linkedSkillIds || [],
+        linked_habit_ids: updates.linkedHabitIds || [],
+        updated_at: new Date().toISOString(),
+      }).eq('id', goalId);
+    }
+    setItems(prev => prev.map(i => (i.id === goalId ? {
+      ...i,
+      name: updates.title.trim(),
+      title: updates.title.trim(),
+      problem: (updates.problem || '').trim(),
+      description: (updates.description || '').trim(),
+      lifeAreaId: updates.lifeAreaId || null,
+      life_area: lifeAreaName || '',
+      linkedItems: updates.linkedItems || [],
+      linkedSkillIds: updates.linkedSkillIds || [],
+      linkedHabitIds: updates.linkedHabitIds || [],
+    } : i)));
   };
 
   const sectionItems = items.filter(itemInScope);
@@ -2307,6 +2644,7 @@ export default function YuYuApp() {
   const allLifeAreaItems = items.filter(i => i.type === 'life-areas');
   const allSkillItems = items.filter(i => i.type === 'skills');
   const allHabitItems = items.filter(i => i.type === 'habits');
+  const allGoalItems = items.filter(i => i.type === 'goals');
 
   // Text in mehrere Zeilen umbrechen, damit er ins Puzzleteil passt
   const wrapPuzzleText = (name, maxCharsPerLine = 11) => {
@@ -3310,6 +3648,7 @@ export default function YuYuApp() {
                 skills={allSkillItems}
                 habits={allHabitItems}
                 lifeAreas={allLifeAreaItems}
+                goals={allGoalItems}
                 onSave={(updates) => updateTodoDetails(detailTodo.id, updates)}
                 onClose={() => setDetailTodoId(null)}
                 onDelete={() => deleteTodo(detailTodo.id)}
@@ -3766,7 +4105,7 @@ export default function YuYuApp() {
                   key={item.id}
                   data-item-id={item.id}
                   className={`group flex items-start gap-3 transition ${
-                    selectionMode ? 'cursor-pointer' : ''
+                    selectionMode || (section === 'goals' && !reorderMode) ? 'cursor-pointer' : ''
                   } ${
                     draggedId === item.id ? 'opacity-40' : 'opacity-100'
                   } ${
@@ -3774,7 +4113,10 @@ export default function YuYuApp() {
                       ? 'outline outline-2 outline-blue-300 rounded-lg'
                       : ''
                   }`}
-                  onClick={() => selectionMode && toggleSelectItem(item.id)}
+                  onClick={() => {
+                    if (selectionMode) { toggleSelectItem(item.id); return; }
+                    if (section === 'goals' && !reorderMode) setDetailGoalId(item.id);
+                  }}
                 >
                   {reorderMode && (
                     <div
@@ -3920,6 +4262,29 @@ export default function YuYuApp() {
             </div>
           </div>
         </div>
+
+        {detailGoalId && (() => {
+          const detailGoal = allGoalItems.find(g => g.id === detailGoalId);
+          if (!detailGoal) return null;
+          return (
+            <GoalDetailModal
+              goal={detailGoal}
+              virtues={allVirtueItems}
+              skills={allSkillItems}
+              habits={allHabitItems}
+              lifeAreas={allLifeAreaItems}
+              todos={todos}
+              onSave={(updates) => updateGoalDetails(detailGoal.id, updates)}
+              onClose={() => setDetailGoalId(null)}
+              onDelete={() => deleteItem(detailGoal.id)}
+              onAddMilestone={(name) => addMilestone(detailGoal.id, name)}
+              onToggleMilestone={(milestoneId) => toggleMilestone(detailGoal.id, milestoneId)}
+              onDeleteMilestone={(milestoneId) => deleteMilestone(detailGoal.id, milestoneId)}
+              onLinkTodo={(todoId) => setTodoGoalLink(todoId, detailGoal.id)}
+              onUnlinkTodo={(todoId) => setTodoGoalLink(todoId, null)}
+            />
+          );
+        })()}
         </>
         )}
       </div>
