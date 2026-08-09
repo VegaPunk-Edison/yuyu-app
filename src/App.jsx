@@ -2157,7 +2157,11 @@ export default function YuYuApp() {
     const ms = (goal?.milestones || []).find(m => m.id === milestoneId);
     if (!ms) return;
     if (session) {
-      await sb.from('yuyu_goal_milestones').update({ completed: !ms.completed }).eq('id', milestoneId);
+      const { error } = await sb.from('yuyu_goal_milestones').update({ completed: !ms.completed }).eq('id', milestoneId);
+      if (error) {
+        window.alert(`Meilenstein konnte nicht geändert werden: ${error.message}`);
+        return;
+      }
     }
     setItems(items.map(i => (i.id === goalId
       ? { ...i, milestones: (i.milestones || []).map(m => (m.id === milestoneId ? { ...m, completed: !m.completed } : m)) }
@@ -2167,7 +2171,11 @@ export default function YuYuApp() {
 
   const deleteMilestone = async (goalId, milestoneId) => {
     if (session) {
-      await sb.from('yuyu_goal_milestones').delete().eq('id', milestoneId);
+      const { error } = await sb.from('yuyu_goal_milestones').delete().eq('id', milestoneId);
+      if (error) {
+        window.alert(`Meilenstein konnte nicht gelöscht werden: ${error.message}`);
+        return;
+      }
     }
     setItems(items.map(i => (i.id === goalId
       ? { ...i, milestones: (i.milestones || []).filter(m => m.id !== milestoneId) }
@@ -2212,7 +2220,11 @@ export default function YuYuApp() {
   const renameGroup = async (id, newName) => {
     if (!newName.trim()) return;
     if (session) {
-      await sb.from('growth_item_groups').update({ name: newName.trim() }).eq('id', id);
+      const { error } = await sb.from('growth_item_groups').update({ name: newName.trim() }).eq('id', id);
+      if (error) {
+        window.alert(`Oberkategorie konnte nicht umbenannt werden: ${error.message}`);
+        return;
+      }
     }
     setItemGroups(prev => prev.map(g => (g.id === id ? { ...g, name: newName } : g)));
   };
@@ -2315,7 +2327,11 @@ export default function YuYuApp() {
     if (!window.confirm(warning)) return;
     if (session) {
       // ON DELETE CASCADE auf growth_items.group_id räumt die enthaltenen Items serverseitig mit auf.
-      await sb.from('growth_item_groups').delete().eq('id', id);
+      const { error } = await sb.from('growth_item_groups').delete().eq('id', id);
+      if (error) {
+        window.alert(`Oberkategorie konnte nicht gelöscht werden: ${error.message}`);
+        return;
+      }
     }
     setItemGroups(prev => prev.filter(g => g.id !== id));
     setItems(prev => prev.filter(i => !(i.type === type && i.groupId === id)));
@@ -2344,7 +2360,7 @@ export default function YuYuApp() {
       ? allLifeAreaItems.find(a => a.id === extra.lifeAreaId)?.name || null
       : null;
     if (session) {
-      const { data } = await sb.from('yuyu_todos').insert({
+      const { data, error } = await sb.from('yuyu_todos').insert({
         user_id: session.user.id,
         text: text.trim(),
         life_area: lifeAreaName,
@@ -2353,6 +2369,10 @@ export default function YuYuApp() {
         linked_habit_ids: extra.linkedHabitIds || [],
         goal_id: extra.goalId || null,
       }).select().single();
+      if (error) {
+        window.alert(`Aufgabe konnte nicht gespeichert werden: ${error.message}`);
+        return;
+      }
       if (data) {
         setTodos(prev => [...prev, {
           id: data.id,
@@ -2389,7 +2409,11 @@ export default function YuYuApp() {
     const todo = todos.find(t => t.id === todoId);
     if (!todo || todo.completed) return;
     if (session) {
-      await sb.from('yuyu_todos').update({ completed: true, updated_at: new Date().toISOString() }).eq('id', todoId);
+      const { error } = await sb.from('yuyu_todos').update({ completed: true, updated_at: new Date().toISOString() }).eq('id', todoId);
+      if (error) {
+        window.alert(`Aufgabe konnte nicht als erledigt markiert werden: ${error.message}`);
+        return;
+      }
     }
     setTodos(todos.map(t => (t.id === todoId ? { ...t, completed: true } : t)));
     gainVirtueXP(todo.linkedItems || []);
@@ -2404,7 +2428,11 @@ export default function YuYuApp() {
     const todo = todos.find(t => t.id === todoId);
     if (!todo || todo.completed || todo.failed) return;
     if (session) {
-      await sb.from('yuyu_todos').update({ failed: true, updated_at: new Date().toISOString() }).eq('id', todoId);
+      const { error } = await sb.from('yuyu_todos').update({ failed: true, updated_at: new Date().toISOString() }).eq('id', todoId);
+      if (error) {
+        window.alert(`Aufgabe konnte nicht als gescheitert markiert werden: ${error.message}`);
+        return;
+      }
     }
     setTodos(todos.map(t => (t.id === todoId ? { ...t, failed: true } : t)));
     loseHeart(`Aufgabe gescheitert: "${todo.text}"`);
@@ -2442,12 +2470,16 @@ export default function YuYuApp() {
   // immer unverknüpft (linked: false) - die Verknüpfung muss über confirmEmployerLink bestätigt werden.
   const upsertEmployerLink = async (jobTitle, employerId) => {
     if (!session) return;
-    const { data } = await sb.from('user_employer_links').upsert({
+    const { data, error } = await sb.from('user_employer_links').upsert({
       user_id: session.user.id,
       job_title: jobTitle.trim(),
       employer_id: employerId || null,
       linked: false,
     }).select().single();
+    if (error) {
+      window.alert(`Job konnte nicht gespeichert werden: ${error.message}`);
+      return;
+    }
     if (data) setEmployerLink(data);
     setEmployerLinkMessage('');
   };
@@ -2459,9 +2491,17 @@ export default function YuYuApp() {
     if (!employer?.linkable) return;
     setEmployerLinkMessage('Prüfe Verknüpfung…');
     try {
-      const { data: profile } = await sb.from('profiles').select('name').eq('id', session.user.id).maybeSingle();
+      const { data: profile, error: profileError } = await sb.from('profiles').select('name').eq('id', session.user.id).maybeSingle();
+      if (profileError) {
+        setEmployerLinkMessage(`Verknüpfung konnte nicht geprüft werden: ${profileError.message}`);
+        return;
+      }
       if (profile?.name) {
-        await sb.from('user_employer_links').update({ linked: true }).eq('user_id', session.user.id);
+        const { error: linkError } = await sb.from('user_employer_links').update({ linked: true }).eq('user_id', session.user.id);
+        if (linkError) {
+          setEmployerLinkMessage(`Verknüpfung konnte nicht gespeichert werden: ${linkError.message}`);
+          return;
+        }
         setEmployerLink(prev => ({ ...prev, linked: true }));
         setEmployerLinkMessage('');
       } else {
@@ -2497,9 +2537,17 @@ export default function YuYuApp() {
   const deleteItem = async (id) => {
     const item = items.find(i => i.id === id);
     if (item?.type === 'goals' && session) {
-      await sb.from('yuyu_goals').delete().eq('id', id);
+      const { error } = await sb.from('yuyu_goals').delete().eq('id', id);
+      if (error) {
+        window.alert(`Ziel konnte nicht gelöscht werden: ${error.message}`);
+        return;
+      }
     } else if (item && GROUPED_TYPES.includes(item.type) && session) {
-      await sb.from('growth_items').delete().eq('id', id);
+      const { error } = await sb.from('growth_items').delete().eq('id', id);
+      if (error) {
+        window.alert(`Konnte nicht gelöscht werden: ${error.message}`);
+        return;
+      }
     }
     setItems(items.filter(i => i.id !== id));
   };
@@ -2509,7 +2557,11 @@ export default function YuYuApp() {
     const item = items.find(i => i.id === id);
     if (!item || item.failed || item.completed) return;
     if (item.type === 'goals' && session) {
-      await sb.from('yuyu_goals').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', id);
+      const { error } = await sb.from('yuyu_goals').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', id);
+      if (error) {
+        window.alert(`Ziel konnte nicht als gescheitert markiert werden: ${error.message}`);
+        return;
+      }
     }
     setItems(items.map(i => (i.id === id ? { ...i, failed: true } : i)));
     loseHeart(`Ziel gescheitert: "${item.name}"`);
@@ -2520,7 +2572,11 @@ export default function YuYuApp() {
     const item = items.find(i => i.id === id);
     if (!item || item.failed || item.completed) return;
     if (item.type === 'goals' && session) {
-      await sb.from('yuyu_goals').update({ status: 'achieved', updated_at: new Date().toISOString() }).eq('id', id);
+      const { error } = await sb.from('yuyu_goals').update({ status: 'achieved', updated_at: new Date().toISOString() }).eq('id', id);
+      if (error) {
+        window.alert(`Ziel konnte nicht als abgeschlossen markiert werden: ${error.message}`);
+        return;
+      }
     }
     setItems(prev => prev.map(i => (i.id === id ? { ...i, completed: true } : i)));
     gainVirtueXP(item.linkedItems || []);
@@ -2535,7 +2591,11 @@ export default function YuYuApp() {
 
   const deleteSelectedItems = async () => {
     if (GROUPED_TYPES.includes(effectiveItemType) && session) {
-      await sb.from('growth_items').delete().in('id', selectedIds);
+      const { error } = await sb.from('growth_items').delete().in('id', selectedIds);
+      if (error) {
+        window.alert(`Konnte nicht gelöscht werden: ${error.message}`);
+        return;
+      }
     }
     setItems(items.filter(i => !selectedIds.includes(i.id)));
     setSelectedIds([]);
@@ -2614,7 +2674,11 @@ export default function YuYuApp() {
 
   const deleteTodo = async (todoId) => {
     if (session) {
-      await sb.from('yuyu_todos').delete().eq('id', todoId);
+      const { error } = await sb.from('yuyu_todos').delete().eq('id', todoId);
+      if (error) {
+        window.alert(`Aufgabe konnte nicht gelöscht werden: ${error.message}`);
+        return;
+      }
     }
     setTodos(todos.filter(t => t.id !== todoId));
   };
@@ -2627,7 +2691,7 @@ export default function YuYuApp() {
       ? allLifeAreaItems.find(a => a.id === updates.lifeAreaId)?.name || null
       : null;
     if (session) {
-      await sb.from('yuyu_todos').update({
+      const { error } = await sb.from('yuyu_todos').update({
         text: updates.text.trim(),
         life_area: lifeAreaName,
         linked_items: updates.linkedItems || [],
@@ -2636,6 +2700,10 @@ export default function YuYuApp() {
         goal_id: updates.goalId || null,
         updated_at: new Date().toISOString(),
       }).eq('id', todoId);
+      if (error) {
+        window.alert(`Aufgabe konnte nicht gespeichert werden: ${error.message}`);
+        return;
+      }
     }
     setTodos(prev => prev.map(t => (t.id === todoId ? {
       ...t,
@@ -2653,7 +2721,11 @@ export default function YuYuApp() {
   // genutzt von der Ziel-Detailansicht zum Hinzufügen/Entfernen bestehender Aufgaben.
   const setTodoGoalLink = async (todoId, goalId) => {
     if (session) {
-      await sb.from('yuyu_todos').update({ goal_id: goalId, updated_at: new Date().toISOString() }).eq('id', todoId);
+      const { error } = await sb.from('yuyu_todos').update({ goal_id: goalId, updated_at: new Date().toISOString() }).eq('id', todoId);
+      if (error) {
+        window.alert(`Verknüpfung konnte nicht gespeichert werden: ${error.message}`);
+        return;
+      }
     }
     setTodos(prev => prev.map(t => (t.id === todoId ? { ...t, goalId } : t)));
   };
@@ -2666,7 +2738,7 @@ export default function YuYuApp() {
       ? allLifeAreaItems.find(a => a.id === updates.lifeAreaId)?.name || null
       : null;
     if (session) {
-      await sb.from('yuyu_goals').update({
+      const { error } = await sb.from('yuyu_goals').update({
         title: updates.title.trim(),
         problem: (updates.problem || '').trim() || null,
         description: (updates.description || '').trim() || null,
@@ -2676,6 +2748,10 @@ export default function YuYuApp() {
         linked_habit_ids: updates.linkedHabitIds || [],
         updated_at: new Date().toISOString(),
       }).eq('id', goalId);
+      if (error) {
+        window.alert(`Ziel konnte nicht gespeichert werden: ${error.message}`);
+        return;
+      }
     }
     setItems(prev => prev.map(i => (i.id === goalId ? {
       ...i,
