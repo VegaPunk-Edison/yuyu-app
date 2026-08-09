@@ -2098,9 +2098,13 @@ export default function YuYuApp() {
   const addMilestone = async (goalId, name) => {
     if (!name || !name.trim()) return;
     if (session) {
-      const { data } = await sb.from('yuyu_goal_milestones').insert({
+      const { data, error } = await sb.from('yuyu_goal_milestones').insert({
         goal_id: goalId, user_id: session.user.id, name: name.trim(),
       }).select().single();
+      if (error) {
+        window.alert(`Meilenstein konnte nicht gespeichert werden: ${error.message}`);
+        return;
+      }
       if (data) {
         setItems(prev => prev.map(i => i.id === goalId
           ? { ...i, milestones: [...(i.milestones || []), { id: data.id, name: data.name, completed: false }] }
