@@ -925,6 +925,171 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
   );
 }
 
+// Detail-/Bearbeiten-Dialog für eine bestehende Aufgabe - anders als TodoWizardInput (Erstellung,
+// gestuft) zeigt dieser alle Felder gleichzeitig, da beim Bearbeiten meist gezielt ein einzelnes
+// Feld geändert wird, nicht die ganze Reihe von vorn durchlaufen werden soll.
+function TodoDetailModal({ todo, virtues, skills, lifeAreas, onSave, onClose, onDelete }) {
+  const [text, setText] = useState(todo.text);
+  const [linkedItems, setLinkedItems] = useState(todo.linkedItems || []);
+  const [linkedSkillIds, setLinkedSkillIds] = useState(todo.linkedSkillIds || []);
+  const [habit, setHabit] = useState(todo.habit || '');
+  const [lifeAreaId, setLifeAreaId] = useState(todo.lifeAreaId || null);
+  const [virtueInput, setVirtueInput] = useState('');
+  const [skillInput, setSkillInput] = useState('');
+
+  const virtueSuggestions = virtueInput
+    ? virtues.filter(v => v.name.toLowerCase().includes(virtueInput.toLowerCase()) && !linkedItems.includes(v.id)).slice(0, 5)
+    : [];
+  const skillSuggestions = skillInput
+    ? skills.filter(s => s.name.toLowerCase().includes(skillInput.toLowerCase()) && !linkedSkillIds.includes(s.id)).slice(0, 5)
+    : [];
+
+  const addVirtue = (v) => { setLinkedItems(prev => (prev.includes(v.id) ? prev : [...prev, v.id])); setVirtueInput(''); };
+  const removeVirtue = (id) => setLinkedItems(prev => prev.filter(i => i !== id));
+  const addSkill = (s) => { setLinkedSkillIds(prev => (prev.includes(s.id) ? prev : [...prev, s.id])); setSkillInput(''); };
+  const removeSkill = (id) => setLinkedSkillIds(prev => prev.filter(i => i !== id));
+
+  const handleSave = () => {
+    if (!text.trim()) return;
+    onSave({ text, linkedItems, linkedSkillIds, habit, lifeAreaId });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div
+        className="bg-white w-full sm:max-w-md sm:rounded-xl rounded-t-2xl p-5 sm:p-6 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-light text-slate-900">Aufgabe</h3>
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600">
+            <X className="w-5 h-5" strokeWidth={1.5} />
+          </button>
+        </div>
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Text</label>
+        <input
+          autoFocus
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          className="w-full mb-4 text-sm text-slate-900 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5"
+        />
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Tugenden</label>
+        {linkedItems.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {linkedItems.map(id => {
+              const v = virtues.find(vv => vv.id === id);
+              if (!v) return null;
+              return (
+                <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
+                  {v.name}
+                  <button type="button" onClick={() => removeVirtue(id)} className="hover:text-blue-900">
+                    <X className="w-3 h-3" strokeWidth={2} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="relative mb-4">
+          <input
+            value={virtueInput}
+            onChange={(e) => setVirtueInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && virtueSuggestions[0]) { e.preventDefault(); addVirtue(virtueSuggestions[0]); } }}
+            placeholder="Tugend hinzufügen…"
+            className="w-full text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5"
+          />
+          {virtueSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {virtueSuggestions.map(v => (
+                <button key={v.id} type="button" onMouseDown={(e) => { e.preventDefault(); addVirtue(v); }} className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition">
+                  {v.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Fähigkeiten</label>
+        {linkedSkillIds.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {linkedSkillIds.map(id => {
+              const s = skills.find(ss => ss.id === id);
+              if (!s) return null;
+              return (
+                <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-50 text-violet-700 text-xs rounded-full">
+                  {s.name}
+                  <button type="button" onClick={() => removeSkill(id)} className="hover:text-violet-900">
+                    <X className="w-3 h-3" strokeWidth={2} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="relative mb-4">
+          <input
+            value={skillInput}
+            onChange={(e) => setSkillInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && skillSuggestions[0]) { e.preventDefault(); addSkill(skillSuggestions[0]); } }}
+            placeholder="Fähigkeit hinzufügen…"
+            className="w-full text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5"
+          />
+          {skillSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {skillSuggestions.map(s => (
+                <button key={s.id} type="button" onMouseDown={(e) => { e.preventDefault(); addSkill(s); }} className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition">
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Gewohnheit</label>
+        <input
+          value={habit}
+          onChange={(e) => setHabit(e.target.value)}
+          placeholder="optional"
+          className="w-full mb-4 text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5"
+        />
+
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Lebensbereich</label>
+        <select
+          value={lifeAreaId != null ? String(lifeAreaId) : ''}
+          onChange={(e) => setLifeAreaId(e.target.value ? Number(e.target.value) : null)}
+          className="w-full mb-6 text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5 bg-white"
+        >
+          <option value="">Kein Lebensbereich</option>
+          {lifeAreas.map(a => (
+            <option key={a.id} value={String(a.id)}>{a.name}</option>
+          ))}
+        </select>
+
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => { onDelete(); onClose(); }}
+            className="text-xs text-red-400 hover:text-red-600 transition"
+          >
+            Löschen
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!text.trim()}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition disabled:opacity-40"
+          >
+            Speichern
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Job + Arbeitgeber ────────────────────────────────────────────────────────
 // Zwei-Stufen-Wizard wie GoalForm/TodoWizardInput: erst Job-Titel (Freitext), dann Arbeitgeber -
 // aber als feste Liste von Buttons statt Freitext-Autocomplete, da der Arbeitgeber nur aus der
@@ -1128,8 +1293,7 @@ export default function YuYuApp() {
   const [newGroupName, setNewGroupName] = useState('');
   const [editingGroupId, setEditingGroupId] = useState(null);
   const [editingGroupName, setEditingGroupName] = useState('');
-  const [editingTodoId, setEditingTodoId] = useState(null);
-  const [editingTodoText, setEditingTodoText] = useState('');
+  const [detailTodoId, setDetailTodoId] = useState(null);
   const [hearts, setHearts] = useState(() => loadJSON('yuyu-hearts', MAX_HEARTS));
   const [heartLog, setHeartLog] = useState(() => loadJSON('yuyu-heart-log', []));
   const [penaltyTask, setPenaltyTask] = useState(() => loadJSON('yuyu-penalty-task', ''));
@@ -1303,15 +1467,19 @@ export default function YuYuApp() {
       });
       // Convert Supabase todos → yuyu todo format
       if (todosOk) {
+        // life_area kommt aus Supabase nur als Name (text), lifeAreaId muss dagegen anhand des
+        // lokal geseedeten Lebensbereich-Items aufgelöst werden (sonst greift z.B. gainLifeAreaXP
+        // nach einem Reload nicht mehr, weil die id fehlt).
+        const localLifeAreas = items.filter(i => i.type === 'life-areas');
         const remoteTodos = (todosRes.data ?? []).map(t => ({
           id: t.id,
           text: t.text,
           completed: t.completed,
           failed: t.failed,
-          linkedItems: [],
-          linkedSkillIds: [],
+          linkedItems: t.linked_items || [],
+          linkedSkillIds: t.linked_skill_ids || [],
           habit: t.habit || '',
-          lifeAreaId: null,
+          lifeAreaId: t.life_area ? (localLifeAreas.find(a => a.name === t.life_area)?.id ?? null) : null,
           life_area: t.life_area || '',
           createdAt: t.created_at,
         }));
@@ -1660,6 +1828,8 @@ export default function YuYuApp() {
         text: text.trim(),
         life_area: lifeAreaName,
         habit: (extra.habit || '').trim() || null,
+        linked_items: linkedVirtues,
+        linked_skill_ids: extra.linkedSkillIds || [],
       }).select().single();
       if (data) {
         setTodos(prev => [...prev, {
@@ -1910,12 +2080,32 @@ export default function YuYuApp() {
     setTodos(todos.filter(t => t.id !== todoId));
   };
 
-  const editTodo = async (todoId, newText) => {
-    if (!newText || !newText.trim()) return;
+  // Speichert alle bearbeitbaren Felder einer Aufgabe auf einmal (Text, verknüpfte Tugenden/
+  // Fähigkeiten, Gewohnheit, Lebensbereich) - genutzt vom Aufgaben-Detail-Dialog.
+  const updateTodoDetails = async (todoId, updates) => {
+    if (!updates.text || !updates.text.trim()) return;
+    const lifeAreaName = updates.lifeAreaId
+      ? allLifeAreaItems.find(a => a.id === updates.lifeAreaId)?.name || null
+      : null;
     if (session) {
-      await sb.from('yuyu_todos').update({ text: newText.trim(), updated_at: new Date().toISOString() }).eq('id', todoId);
+      await sb.from('yuyu_todos').update({
+        text: updates.text.trim(),
+        habit: (updates.habit || '').trim() || null,
+        life_area: lifeAreaName,
+        linked_items: updates.linkedItems || [],
+        linked_skill_ids: updates.linkedSkillIds || [],
+        updated_at: new Date().toISOString(),
+      }).eq('id', todoId);
     }
-    setTodos(prev => prev.map(t => (t.id === todoId ? { ...t, text: newText.trim() } : t)));
+    setTodos(prev => prev.map(t => (t.id === todoId ? {
+      ...t,
+      text: updates.text.trim(),
+      habit: (updates.habit || '').trim(),
+      lifeAreaId: updates.lifeAreaId || null,
+      life_area: lifeAreaName || '',
+      linkedItems: updates.linkedItems || [],
+      linkedSkillIds: updates.linkedSkillIds || [],
+    } : t)));
   };
 
   const sectionItems = items.filter(itemInScope);
@@ -2824,28 +3014,12 @@ export default function YuYuApp() {
                     >
                       <Circle className="w-4 h-4" strokeWidth={1.5} />
                     </button>
-                    <div className="flex-1 min-w-0">
-                      {editingTodoId === todo.id ? (
-                        <input
-                          autoFocus
-                          value={editingTodoText}
-                          onChange={(e) => setEditingTodoText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              editTodo(todo.id, editingTodoText);
-                              setEditingTodoId(null);
-                            }
-                            if (e.key === 'Escape') setEditingTodoId(null);
-                          }}
-                          onBlur={() => {
-                            editTodo(todo.id, editingTodoText);
-                            setEditingTodoId(null);
-                          }}
-                          className="w-full text-sm font-light text-slate-900 bg-transparent border-b border-blue-400 outline-none"
-                        />
-                      ) : (
-                        <span className="text-sm font-light text-slate-900">{todo.text}</span>
-                      )}
+                    <button
+                      type="button"
+                      onClick={() => setDetailTodoId(todo.id)}
+                      className="flex-1 min-w-0 text-left"
+                    >
+                      <span className="text-sm font-light text-slate-900">{todo.text}</span>
                       {hasExtras && (
                         <div className="flex flex-wrap items-center gap-1 mt-1">
                           {todoLifeArea && (
@@ -2862,13 +3036,10 @@ export default function YuYuApp() {
                           ))}
                         </div>
                       )}
-                    </div>
+                    </button>
                     <button
-                      onClick={() => {
-                        setEditingTodoId(todo.id);
-                        setEditingTodoText(todo.text);
-                      }}
-                      title="Bearbeiten"
+                      onClick={() => setDetailTodoId(todo.id)}
+                      title="Details/Bearbeiten"
                       className="mt-0.5 p-1.5 -m-1.5 text-slate-300 hover:text-blue-500 transition opacity-100 sm:opacity-0 sm:group-hover/task:opacity-100 flex-shrink-0"
                     >
                       <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -2928,6 +3099,22 @@ export default function YuYuApp() {
               </>
             )}
           </div>
+
+          {detailTodoId && (() => {
+            const detailTodo = todos.find(t => t.id === detailTodoId);
+            if (!detailTodo) return null;
+            return (
+              <TodoDetailModal
+                todo={detailTodo}
+                virtues={allVirtueItems}
+                skills={allSkillItems}
+                lifeAreas={allLifeAreaItems}
+                onSave={(updates) => updateTodoDetails(detailTodo.id, updates)}
+                onClose={() => setDetailTodoId(null)}
+                onDelete={() => deleteTodo(detailTodo.id)}
+              />
+            );
+          })()}
         </div>
       </div>
     );
