@@ -4229,6 +4229,15 @@ export default function YuYuApp() {
                       )}
                     </div>
 
+                    {section === 'goals' && item.milestones?.length > 0 && (
+                      <GoalMilestones
+                        goal={item}
+                        onAdd={(name) => addMilestone(item.id, name)}
+                        onToggle={(milestoneId) => toggleMilestone(item.id, milestoneId)}
+                        onDelete={(milestoneId) => deleteMilestone(item.id, milestoneId)}
+                        onEdit={(milestoneId, name) => editMilestone(item.id, milestoneId, name)}
+                      />
+                    )}
                   </div>
                 </div>
               ))}
