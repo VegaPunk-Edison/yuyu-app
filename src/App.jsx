@@ -143,6 +143,8 @@ function GoalForm({ virtues, skills, habits, lifeAreas, virtueGroups, skillGroup
   const [value, setValue] = useState('');
   const [lifeArea, setLifeArea] = useState(null);
   const [title, setTitle] = useState('');
+  const [problem, setProblem] = useState('');
+  const [description, setDescription] = useState('');
   const [linkedIds, setLinkedIds] = useState([]);
   const [linkedSkillIds, setLinkedSkillIds] = useState([]);
   const [linkedHabitIds, setLinkedHabitIds] = useState([]);
@@ -228,6 +230,8 @@ function GoalForm({ virtues, skills, habits, lifeAreas, virtueGroups, skillGroup
     setValue('');
     setLifeArea(null);
     setTitle('');
+    setProblem('');
+    setDescription('');
     setLinkedIds([]);
     setLinkedSkillIds([]);
     setLinkedHabitIds([]);
@@ -239,7 +243,7 @@ function GoalForm({ virtues, skills, habits, lifeAreas, virtueGroups, skillGroup
     if (!title.trim()) return;
     // Formular nur bei tatsächlichem Erfolg zurücksetzen - schlägt das Speichern fehl (z.B.
     // Supabase-Fehler), bleiben die eingegebenen Antworten erhalten statt kommentarlos zu verschwinden.
-    const ok = await onSubmit({ lifeAreaId: lifeArea?.id || null, title, linkedIds, linkedSkillIds, linkedHabitIds });
+    const ok = await onSubmit({ lifeAreaId: lifeArea?.id || null, title, problem, description, linkedIds, linkedSkillIds, linkedHabitIds });
     if (ok !== false) reset();
   };
 
@@ -252,10 +256,22 @@ function GoalForm({ virtues, skills, habits, lifeAreas, virtueGroups, skillGroup
       setStage('lifearea');
       return;
     }
-    if (stage === 'virtue') {
+    if (stage === 'problem') {
       setValue(title);
       setTitle('');
       setStage('title');
+      return;
+    }
+    if (stage === 'outcome') {
+      setValue(problem);
+      setProblem('');
+      setStage('problem');
+      return;
+    }
+    if (stage === 'virtue') {
+      setValue(description);
+      setDescription('');
+      setStage('outcome');
       return;
     }
     if (stage === 'virtue-group' || stage === 'skill-group' || stage === 'habit-group') {
@@ -307,6 +323,21 @@ function GoalForm({ virtues, skills, habits, lifeAreas, virtueGroups, skillGroup
     if (stage === 'title') {
       if (!value.trim()) return;
       setTitle(value.trim());
+      setValue('');
+      setStage('problem');
+      return;
+    }
+
+    if (stage === 'problem') {
+      // Optional wie der Lebensbereich - leeres Enter überspringt die Stufe.
+      if (value.trim()) setProblem(value.trim());
+      setValue('');
+      setStage('outcome');
+      return;
+    }
+
+    if (stage === 'outcome') {
+      if (value.trim()) setDescription(value.trim());
       setValue('');
       setStage('virtue');
       return;
@@ -391,6 +422,8 @@ function GoalForm({ virtues, skills, habits, lifeAreas, virtueGroups, skillGroup
   const placeholders = {
     lifearea: 'Welchem Lebensbereich zuordnen? (optional)',
     title: 'Was möchtest du erreichen?',
+    problem: 'Welches Problem löst du? (optional)',
+    outcome: 'Was ist dein gewünschter Ausgang? (optional)',
     virtue: 'Tugend eingeben (mehrere möglich), Enter zum Bestätigen',
     'virtue-group': 'Name der neuen Oberkategorie',
     skill: 'Fähigkeit eingeben (mehrere möglich), Enter zum Bestätigen',
@@ -401,10 +434,12 @@ function GoalForm({ virtues, skills, habits, lifeAreas, virtueGroups, skillGroup
 
   return (
     <div>
-      {(lifeArea || title) && (
+      {(lifeArea || title || problem || description) && (
         <div className="mb-2 space-y-0.5">
           {lifeArea && <p className="text-xs text-blue-600 font-light">{lifeArea.name}</p>}
           {title && <p className="text-sm text-slate-900">{title}</p>}
+          {problem && <p className="text-xs text-slate-500 font-light">{problem}</p>}
+          {description && <p className="text-xs text-slate-500 font-light">{description}</p>}
         </div>
       )}
       {(linkedIds.length > 0 || linkedSkillIds.length > 0 || linkedHabitIds.length > 0) && (
@@ -497,6 +532,16 @@ function GoalForm({ virtues, skills, habits, lifeAreas, virtueGroups, skillGroup
               maxLength={GOAL_TITLE_MAX_LENGTH}
               placeholder={placeholders.title}
               className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
+            />
+          ) : stage === 'problem' || stage === 'outcome' ? (
+            <textarea
+              ref={inputRef}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={placeholders[stage]}
+              rows={2}
+              className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-sm resize-none"
             />
           ) : (
             <input
@@ -3637,8 +3682,8 @@ export default function YuYuApp() {
               onCreateVirtue={createAndLinkVirtue}
               onCreateSkill={createAndLinkSkill}
               onCreateHabit={createAndLinkHabit}
-              onSubmit={({ lifeAreaId, title, linkedIds, linkedSkillIds, linkedHabitIds }) =>
-                addItem(title, linkedIds, { lifeAreaId, linkedSkillIds, linkedHabitIds })
+              onSubmit={({ lifeAreaId, title, problem, description, linkedIds, linkedSkillIds, linkedHabitIds }) =>
+                addItem(title, linkedIds, { lifeAreaId, problem, description, linkedSkillIds, linkedHabitIds })
               }
             />
           ) : (
