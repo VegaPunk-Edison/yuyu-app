@@ -57,9 +57,10 @@ const migrateItemXP = (item) => {
 // Die vier Lebensbereiche sind fest vorgegeben, keine frei anlegbaren Einträge
 const FIXED_LIFE_AREAS = ['Persönlich', 'Familie & Freunde', 'Arbeit', 'Gemeinde'];
 const LIFE_AREA_XP_PER_COMPLETION = 10;
-// Fähigkeiten und Tugenden laufen mit dem gleichen XP-Zuwachs pro Erledigung wie Lebensbereiche
+// Fähigkeiten, Tugenden und Gewohnheiten laufen mit dem gleichen XP-Zuwachs pro Erledigung wie Lebensbereiche
 const SKILL_XP_PER_COMPLETION = 10;
 const VIRTUE_XP_PER_COMPLETION = 10;
+const HABIT_XP_PER_COMPLETION = 10;
 // Pixeliges 8-Bit-Herz: Rastergröße füllen, indem pro Zelle die klassische Herz-Formel
 // (x²+y²-1)³ - x²y³ <= 0 ausgewertet wird - ergibt automatisch die gestufte Pixel-Silhouette.
 const PIXEL_HEART_COLS = 20;
@@ -137,7 +138,7 @@ const GOAL_TITLE_MAX_LENGTH = 60;
 // -> Titel (Pflicht, zeichenbegrenzt) -> gewünschtes Ergebnis (Pflicht) -> Tugend(en, mehrfach
 // möglich, optional). Jede Antwort wird oben als Zusammenfassung angezeigt; am Ende bestätigt
 // ein "Speichern"-Klick oder leeres Enter auf der letzten Stufe das Ziel auf einmal.
-function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCreateVirtue, onCreateSkill, onSubmit }) {
+function GoalForm({ virtues, skills, habits, lifeAreas, virtueGroups, skillGroups, habitGroups, onCreateVirtue, onCreateSkill, onCreateHabit, onSubmit }) {
   const [stage, setStage] = useState('lifearea');
   const [value, setValue] = useState('');
   const [lifeArea, setLifeArea] = useState(null);
@@ -147,6 +148,7 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
   const [description, setDescription] = useState('');
   const [linkedIds, setLinkedIds] = useState([]);
   const [linkedSkillIds, setLinkedSkillIds] = useState([]);
+  const [linkedHabitIds, setLinkedHabitIds] = useState([]);
   const [pendingGroupItemName, setPendingGroupItemName] = useState('');
   const [creatingNewGroup, setCreatingNewGroup] = useState(false);
   const inputRef = useRef(null);
@@ -171,6 +173,10 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
     ? skills.filter(s => s.name.toLowerCase().includes(value.toLowerCase()) && !linkedSkillIds.includes(s.id)).slice(0, 5)
     : [];
 
+  const habitSuggestions = stage === 'habit'
+    ? habits.filter(h => h.name.toLowerCase().includes(value.toLowerCase()) && !linkedHabitIds.includes(h.id)).slice(0, 5)
+    : [];
+
   const addVirtue = (virtue) => {
     setLinkedIds(prev => (prev.includes(virtue.id) ? prev : [...prev, virtue.id]));
     setValue('');
@@ -185,9 +191,16 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
 
   const removeSkill = (id) => setLinkedSkillIds(prev => prev.filter(i => i !== id));
 
-  // Oberkategorie für eine spontan angelegte Tugend/Fähigkeit festlegen - entweder eine vorhandene
-  // per id (Klick aus der Liste) oder eine neue mit diesem Namen (aus dem "+ Neue Oberkategorie"-
-  // Feld). Welcher Typ gemeint ist, ergibt sich aus der aktuellen Stufe (virtue-group/skill-group).
+  const addHabit = (habit) => {
+    setLinkedHabitIds(prev => (prev.includes(habit.id) ? prev : [...prev, habit.id]));
+    setValue('');
+  };
+
+  const removeHabit = (id) => setLinkedHabitIds(prev => prev.filter(i => i !== id));
+
+  // Oberkategorie für eine spontan angelegte Tugend/Fähigkeit/Gewohnheit festlegen - entweder eine
+  // vorhandene per id (Klick aus der Liste) oder eine neue mit diesem Namen (aus dem "+ Neue
+  // Oberkategorie"-Feld). Welcher Typ gemeint ist, ergibt sich aus der aktuellen Stufe.
   const pickGroup = async (groupId, newGroupName) => {
     if (stage === 'virtue-group') {
       const newVirtue = groupId
@@ -195,12 +208,18 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
         : await onCreateVirtue(pendingGroupItemName, null, newGroupName);
       if (newVirtue) addVirtue(newVirtue);
       setStage('virtue');
-    } else {
+    } else if (stage === 'skill-group') {
       const newSkill = groupId
         ? await onCreateSkill(pendingGroupItemName, groupId, null)
         : await onCreateSkill(pendingGroupItemName, null, newGroupName);
       if (newSkill) addSkill(newSkill);
       setStage('skill');
+    } else {
+      const newHabit = groupId
+        ? await onCreateHabit(pendingGroupItemName, groupId, null)
+        : await onCreateHabit(pendingGroupItemName, null, newGroupName);
+      if (newHabit) addHabit(newHabit);
+      setStage('habit');
     }
     setPendingGroupItemName('');
     setValue('');
@@ -217,6 +236,7 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
     setDescription('');
     setLinkedIds([]);
     setLinkedSkillIds([]);
+    setLinkedHabitIds([]);
     setPendingGroupItemName('');
     setCreatingNewGroup(false);
   };
@@ -225,7 +245,7 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
     if (!learningGoal.trim() || !title.trim() || !problem.trim() || !description.trim()) return;
     // Formular nur bei tatsächlichem Erfolg zurücksetzen - schlägt das Speichern fehl (z.B.
     // Supabase-Fehler), bleiben die eingegebenen Antworten erhalten statt kommentarlos zu verschwinden.
-    const ok = await onSubmit({ lifeAreaId: lifeArea?.id || null, learningGoal, title, problem, description, linkedIds, linkedSkillIds });
+    const ok = await onSubmit({ lifeAreaId: lifeArea?.id || null, learningGoal, title, problem, description, linkedIds, linkedSkillIds, linkedHabitIds });
     if (ok !== false) reset();
   };
 
@@ -262,7 +282,7 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
       setStage('outcome');
       return;
     }
-    if (stage === 'virtue-group' || stage === 'skill-group') {
+    if (stage === 'virtue-group' || stage === 'skill-group' || stage === 'habit-group') {
       if (creatingNewGroup) {
         setCreatingNewGroup(false);
         setValue('');
@@ -270,12 +290,17 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
       }
       setValue(pendingGroupItemName);
       setPendingGroupItemName('');
-      setStage(stage === 'virtue-group' ? 'virtue' : 'skill');
+      setStage(stage === 'virtue-group' ? 'virtue' : stage === 'skill-group' ? 'skill' : 'habit');
       return;
     }
     if (stage === 'skill') {
       setValue('');
       setStage('virtue');
+      return;
+    }
+    if (stage === 'habit') {
+      setValue('');
+      setStage('skill');
     }
   };
 
@@ -360,30 +385,52 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
       return;
     }
 
-    if (stage === 'virtue-group' || stage === 'skill-group') {
+    if (stage === 'virtue-group' || stage === 'skill-group' || stage === 'habit-group') {
       // Nur die "+ Neue Oberkategorie"-Eingabe ist ein Textfeld - vorhandene werden per Klick
       // aus der Liste gewählt (pickGroup), nicht getippt.
       if (creatingNewGroup && value.trim()) pickGroup(null, value.trim());
       return;
     }
 
-    // stage === 'skill' - leeres Enter darf nicht automatisch den ersten Dropdown-Eintrag
-    // verknüpfen, sonst könnte man diese Stufe mit leerem Feld nie zum Speichern verlassen.
-    if (value.trim() && skillSuggestions.length > 0) {
-      addSkill(skillSuggestions[0]);
+    if (stage === 'skill') {
+      // leeres Enter darf nicht automatisch den ersten Dropdown-Eintrag verknüpfen, sonst könnte
+      // man diese Stufe mit leerem Feld nie verlassen.
+      if (value.trim() && skillSuggestions.length > 0) {
+        addSkill(skillSuggestions[0]);
+        return;
+      }
+      const skillMatch = value.trim() && skills.find(s => s.name.toLowerCase() === value.trim().toLowerCase());
+      if (skillMatch) {
+        addSkill(skillMatch);
+        return;
+      }
+      // Kein Treffer, aber ein getippter Name: Fähigkeit gibt es noch nicht - braucht wie Tugenden
+      // zwingend eine Oberkategorie, erst dort auswählen/anlegen statt zu verwerfen.
+      if (value.trim()) {
+        setPendingGroupItemName(value.trim());
+        setValue('');
+        setStage('skill-group');
+        return;
+      }
+      setValue('');
+      setStage('habit');
       return;
     }
-    const skillMatch = value.trim() && skills.find(s => s.name.toLowerCase() === value.trim().toLowerCase());
-    if (skillMatch) {
-      addSkill(skillMatch);
+
+    // stage === 'habit' - gleiches Muster wie virtue/skill, letzte Stufe vor dem Speichern.
+    if (value.trim() && habitSuggestions.length > 0) {
+      addHabit(habitSuggestions[0]);
       return;
     }
-    // Kein Treffer, aber ein getippter Name: Fähigkeit gibt es noch nicht - braucht wie Tugenden
-    // zwingend eine Oberkategorie, erst dort auswählen/anlegen statt zu verwerfen.
+    const habitMatch = value.trim() && habits.find(h => h.name.toLowerCase() === value.trim().toLowerCase());
+    if (habitMatch) {
+      addHabit(habitMatch);
+      return;
+    }
     if (value.trim()) {
       setPendingGroupItemName(value.trim());
       setValue('');
-      setStage('skill-group');
+      setStage('habit-group');
       return;
     }
     save();
@@ -399,6 +446,8 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
     'virtue-group': 'Name der neuen Oberkategorie',
     skill: 'Fähigkeit eingeben (mehrere möglich), Enter zum Bestätigen',
     'skill-group': 'Name der neuen Oberkategorie',
+    habit: 'Gewohnheit eingeben (mehrere möglich), Enter zum Bestätigen',
+    'habit-group': 'Name der neuen Oberkategorie',
   };
 
   return (
@@ -412,7 +461,7 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
           {description && <p className="text-xs text-slate-500 font-light">{description}</p>}
         </div>
       )}
-      {(linkedIds.length > 0 || linkedSkillIds.length > 0) && (
+      {(linkedIds.length > 0 || linkedSkillIds.length > 0 || linkedHabitIds.length > 0) && (
         <div className="flex flex-wrap gap-1.5 mb-2">
           {linkedIds.map(id => {
             const v = virtues.find(vv => vv.id === id);
@@ -438,17 +487,29 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
               </span>
             );
           })}
+          {linkedHabitIds.map(id => {
+            const h = habits.find(hh => hh.id === id);
+            if (!h) return null;
+            return (
+              <span key={`habit-${id}`} className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs rounded-full">
+                {h.name}
+                <button type="button" onClick={() => removeHabit(id)} className="hover:text-emerald-900">
+                  <X className="w-3 h-3" strokeWidth={2} />
+                </button>
+              </span>
+            );
+          })}
         </div>
       )}
 
-      {stage === 'virtue-group' || stage === 'skill-group' ? (
+      {stage === 'virtue-group' || stage === 'skill-group' || stage === 'habit-group' ? (
         <div>
           <p className="text-xs text-slate-500 font-light mb-2">
-            Neue {stage === 'virtue-group' ? 'Tugend' : 'Fähigkeit'} "{pendingGroupItemName}" - Oberkategorie wählen:
+            Neue {stage === 'virtue-group' ? 'Tugend' : stage === 'skill-group' ? 'Fähigkeit' : 'Gewohnheit'} "{pendingGroupItemName}" - Oberkategorie wählen:
           </p>
           {!creatingNewGroup ? (
             <div className="space-y-1.5">
-              {(stage === 'virtue-group' ? virtueGroups : skillGroups).map(g => (
+              {(stage === 'virtue-group' ? virtueGroups : stage === 'skill-group' ? skillGroups : habitGroups).map(g => (
                 <button
                   key={g.id}
                   type="button"
@@ -554,6 +615,20 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
               ))}
             </div>
           )}
+          {stage === 'habit' && habitSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {habitSuggestions.map(h => (
+                <button
+                  key={h.id}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); addHabit(h); }}
+                  className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+                >
+                  {h.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -568,7 +643,7 @@ function GoalForm({ virtues, skills, lifeAreas, virtueGroups, skillGroups, onCre
             ← Zurück
           </button>
         )}
-        {stage === 'skill' && (
+        {stage === 'habit' && (
           <button
             onClick={save}
             className="text-sm text-blue-600 hover:text-blue-700 font-light transition"
@@ -675,13 +750,13 @@ function GoalMilestones({ goal, onAdd, onToggle, onDelete }) {
 // Aufgabe anlegen: ein einziges Textfeld wandert per Enter durch die Stufen
 // Aufgabe -> Tugend(en, mehrfach möglich) -> Gewohnheit -> Lebensbereich.
 // Leeres Enter überspringt die aktuelle (optionale) Stufe.
-function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, className, wrapperClassName }) {
+function TodoWizardInput({ virtues, skills, habits, lifeAreas, onSubmit, placeholder, className, wrapperClassName }) {
   const [stage, setStage] = useState('task');
   const [value, setValue] = useState('');
   const [taskText, setTaskText] = useState('');
   const [linkedIds, setLinkedIds] = useState([]);
   const [linkedSkillIds, setLinkedSkillIds] = useState([]);
-  const [habit, setHabit] = useState('');
+  const [linkedHabitIds, setLinkedHabitIds] = useState([]);
   const inputRef = useRef(null);
 
   // Fokus wandert mit, damit man ohne erneutes Antippen weiterschreiben kann
@@ -695,6 +770,10 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
 
   const skillSuggestions = stage === 'skill' && value
     ? skills.filter(s => s.name.toLowerCase().includes(value.toLowerCase()) && !linkedSkillIds.includes(s.id)).slice(0, 5)
+    : [];
+
+  const habitSuggestions = stage === 'habit' && value
+    ? habits.filter(h => h.name.toLowerCase().includes(value.toLowerCase()) && !linkedHabitIds.includes(h.id)).slice(0, 5)
     : [];
 
   const lifeAreaSuggestions = stage === 'lifearea' && value
@@ -715,13 +794,20 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
 
   const removeSkill = (id) => setLinkedSkillIds(prev => prev.filter(i => i !== id));
 
+  const addHabit = (habit) => {
+    setLinkedHabitIds(prev => (prev.includes(habit.id) ? prev : [...prev, habit.id]));
+    setValue('');
+  };
+
+  const removeHabit = (id) => setLinkedHabitIds(prev => prev.filter(i => i !== id));
+
   const reset = () => {
     setStage('task');
     setValue('');
     setTaskText('');
     setLinkedIds([]);
     setLinkedSkillIds([]);
-    setHabit('');
+    setLinkedHabitIds([]);
   };
 
   // Eine Stufe zurück - z.B. um eine Antwort zu korrigieren; die vorherige Eingabe landet
@@ -744,8 +830,7 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
       return;
     }
     if (stage === 'lifearea') {
-      setValue(habit);
-      setHabit('');
+      setValue('');
       setStage('habit');
     }
   };
@@ -799,7 +884,15 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
     }
 
     if (stage === 'habit') {
-      setHabit(value.trim());
+      if (habitSuggestions.length > 0) {
+        addHabit(habitSuggestions[0]);
+        return;
+      }
+      const match = habits.find(h => h.name.toLowerCase() === value.trim().toLowerCase());
+      if (match) {
+        addHabit(match);
+        return;
+      }
       setValue('');
       setStage('lifearea');
       return;
@@ -809,7 +902,7 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
     const match = lifeAreaSuggestions.length > 0
       ? lifeAreaSuggestions[0]
       : lifeAreas.find(a => a.name.toLowerCase() === value.trim().toLowerCase());
-    onSubmit({ text: taskText, linkedIds, linkedSkillIds, habit, lifeAreaId: match?.id || null });
+    onSubmit({ text: taskText, linkedIds, linkedSkillIds, linkedHabitIds, lifeAreaId: match?.id || null });
     reset();
   };
 
@@ -817,7 +910,7 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
     task: placeholder || '+ Aufgabe hinzufügen',
     virtue: 'Tugend eingeben (mehrere möglich), Enter zum Bestätigen',
     skill: 'Fähigkeit eingeben (mehrere möglich), Enter zum Bestätigen',
-    habit: 'Gewohnheit angeben (optional), Enter für weiter',
+    habit: 'Gewohnheit eingeben (mehrere möglich), Enter zum Bestätigen',
     lifearea: 'Lebensbereich angeben (optional), Enter zum Abschließen',
   };
 
@@ -828,7 +921,7 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
           Aufgabe: <span className="text-slate-600">{taskText}</span>
         </p>
       )}
-      {(linkedIds.length > 0 || linkedSkillIds.length > 0) && (
+      {(linkedIds.length > 0 || linkedSkillIds.length > 0 || linkedHabitIds.length > 0) && (
         <div className="flex flex-wrap gap-1.5 mb-1.5">
           {linkedIds.map(id => {
             const v = virtues.find(vv => vv.id === id);
@@ -849,6 +942,18 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
               <span key={`skill-${id}`} className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-50 text-violet-700 text-xs rounded-full">
                 {s.name}
                 <button type="button" onClick={() => removeSkill(id)} className="hover:text-violet-900">
+                  <X className="w-3 h-3" strokeWidth={2} />
+                </button>
+              </span>
+            );
+          })}
+          {linkedHabitIds.map(id => {
+            const h = habits.find(hh => hh.id === id);
+            if (!h) return null;
+            return (
+              <span key={`habit-${id}`} className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs rounded-full">
+                {h.name}
+                <button type="button" onClick={() => removeHabit(id)} className="hover:text-emerald-900">
                   <X className="w-3 h-3" strokeWidth={2} />
                 </button>
               </span>
@@ -894,6 +999,20 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
             ))}
           </div>
         )}
+        {stage === 'habit' && habitSuggestions.length > 0 && (
+          <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+            {habitSuggestions.map(h => (
+              <button
+                key={h.id}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); addHabit(h); }}
+                className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
+              >
+                {h.name}
+              </button>
+            ))}
+          </div>
+        )}
         {stage === 'lifearea' && lifeAreaSuggestions.length > 0 && (
           <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
             {lifeAreaSuggestions.map(a => (
@@ -902,7 +1021,7 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  onSubmit({ text: taskText, linkedIds, linkedSkillIds, habit, lifeAreaId: a.id });
+                  onSubmit({ text: taskText, linkedIds, linkedSkillIds, linkedHabitIds, lifeAreaId: a.id });
                   reset();
                 }}
                 className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition"
@@ -928,14 +1047,15 @@ function TodoWizardInput({ virtues, skills, lifeAreas, onSubmit, placeholder, cl
 // Detail-/Bearbeiten-Dialog für eine bestehende Aufgabe - anders als TodoWizardInput (Erstellung,
 // gestuft) zeigt dieser alle Felder gleichzeitig, da beim Bearbeiten meist gezielt ein einzelnes
 // Feld geändert wird, nicht die ganze Reihe von vorn durchlaufen werden soll.
-function TodoDetailModal({ todo, virtues, skills, lifeAreas, onSave, onClose, onDelete }) {
+function TodoDetailModal({ todo, virtues, skills, habits, lifeAreas, onSave, onClose, onDelete }) {
   const [text, setText] = useState(todo.text);
   const [linkedItems, setLinkedItems] = useState(todo.linkedItems || []);
   const [linkedSkillIds, setLinkedSkillIds] = useState(todo.linkedSkillIds || []);
-  const [habit, setHabit] = useState(todo.habit || '');
+  const [linkedHabitIds, setLinkedHabitIds] = useState(todo.linkedHabitIds || []);
   const [lifeAreaId, setLifeAreaId] = useState(todo.lifeAreaId || null);
   const [virtueInput, setVirtueInput] = useState('');
   const [skillInput, setSkillInput] = useState('');
+  const [habitInput, setHabitInput] = useState('');
 
   const virtueSuggestions = virtueInput
     ? virtues.filter(v => v.name.toLowerCase().includes(virtueInput.toLowerCase()) && !linkedItems.includes(v.id)).slice(0, 5)
@@ -943,15 +1063,20 @@ function TodoDetailModal({ todo, virtues, skills, lifeAreas, onSave, onClose, on
   const skillSuggestions = skillInput
     ? skills.filter(s => s.name.toLowerCase().includes(skillInput.toLowerCase()) && !linkedSkillIds.includes(s.id)).slice(0, 5)
     : [];
+  const habitSuggestions = habitInput
+    ? habits.filter(h => h.name.toLowerCase().includes(habitInput.toLowerCase()) && !linkedHabitIds.includes(h.id)).slice(0, 5)
+    : [];
 
   const addVirtue = (v) => { setLinkedItems(prev => (prev.includes(v.id) ? prev : [...prev, v.id])); setVirtueInput(''); };
   const removeVirtue = (id) => setLinkedItems(prev => prev.filter(i => i !== id));
   const addSkill = (s) => { setLinkedSkillIds(prev => (prev.includes(s.id) ? prev : [...prev, s.id])); setSkillInput(''); };
   const removeSkill = (id) => setLinkedSkillIds(prev => prev.filter(i => i !== id));
+  const addHabit = (h) => { setLinkedHabitIds(prev => (prev.includes(h.id) ? prev : [...prev, h.id])); setHabitInput(''); };
+  const removeHabit = (id) => setLinkedHabitIds(prev => prev.filter(i => i !== id));
 
   const handleSave = () => {
     if (!text.trim()) return;
-    onSave({ text, linkedItems, linkedSkillIds, habit, lifeAreaId });
+    onSave({ text, linkedItems, linkedSkillIds, linkedHabitIds, lifeAreaId });
     onClose();
   };
 
@@ -1048,13 +1173,41 @@ function TodoDetailModal({ todo, virtues, skills, lifeAreas, onSave, onClose, on
           )}
         </div>
 
-        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Gewohnheit</label>
-        <input
-          value={habit}
-          onChange={(e) => setHabit(e.target.value)}
-          placeholder="optional"
-          className="w-full mb-4 text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5"
-        />
+        <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Gewohnheiten</label>
+        {linkedHabitIds.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {linkedHabitIds.map(id => {
+              const h = habits.find(hh => hh.id === id);
+              if (!h) return null;
+              return (
+                <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs rounded-full">
+                  {h.name}
+                  <button type="button" onClick={() => removeHabit(id)} className="hover:text-emerald-900">
+                    <X className="w-3 h-3" strokeWidth={2} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="relative mb-4">
+          <input
+            value={habitInput}
+            onChange={(e) => setHabitInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && habitSuggestions[0]) { e.preventDefault(); addHabit(habitSuggestions[0]); } }}
+            placeholder="Gewohnheit hinzufügen…"
+            className="w-full text-sm text-slate-700 border-b border-slate-200 focus:border-blue-400 outline-none py-1.5"
+          />
+          {habitSuggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 min-w-[10rem] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {habitSuggestions.map(h => (
+                <button key={h.id} type="button" onMouseDown={(e) => { e.preventDefault(); addHabit(h); }} className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition">
+                  {h.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Lebensbereich</label>
         <select
@@ -1438,6 +1591,10 @@ export default function YuYuApp() {
         msMap[m.goal_id].push(m);
       }
       // Convert Supabase goals → yuyu item format
+      // life_area kommt aus Supabase nur als Name (text), lifeAreaId muss dagegen anhand des
+      // lokal geseedeten Lebensbereich-Items aufgelöst werden (sonst greift z.B. gainLifeAreaXP
+      // nach einem Reload nicht mehr, weil die id fehlt) - gilt für Ziele genauso wie für Aufgaben.
+      const localLifeAreas = items.filter(i => i.type === 'life-areas');
       const remoteGoals = goalsOk ? (goalsRes.data ?? []).map(g => ({
         id: g.id,
         type: 'goals',
@@ -1447,9 +1604,10 @@ export default function YuYuApp() {
         learningGoal: g.learning_goal || '',
         problem: g.problem || '',
         life_area: g.life_area || '',
-        lifeAreaId: null,
-        linkedItems: [],
-        linkedSkillIds: [],
+        lifeAreaId: g.life_area ? (localLifeAreas.find(a => a.name === g.life_area)?.id ?? null) : null,
+        linkedItems: g.linked_items || [],
+        linkedSkillIds: g.linked_skill_ids || [],
+        linkedHabitIds: g.linked_habit_ids || [],
         milestones: (msMap[g.id] ?? []).map(m => ({ id: m.id, name: m.name, completed: m.completed })),
         xp: 0,
         completed: g.status === 'achieved',
@@ -1467,10 +1625,6 @@ export default function YuYuApp() {
       });
       // Convert Supabase todos → yuyu todo format
       if (todosOk) {
-        // life_area kommt aus Supabase nur als Name (text), lifeAreaId muss dagegen anhand des
-        // lokal geseedeten Lebensbereich-Items aufgelöst werden (sonst greift z.B. gainLifeAreaXP
-        // nach einem Reload nicht mehr, weil die id fehlt).
-        const localLifeAreas = items.filter(i => i.type === 'life-areas');
         const remoteTodos = (todosRes.data ?? []).map(t => ({
           id: t.id,
           text: t.text,
@@ -1478,6 +1632,7 @@ export default function YuYuApp() {
           failed: t.failed,
           linkedItems: t.linked_items || [],
           linkedSkillIds: t.linked_skill_ids || [],
+          linkedHabitIds: t.linked_habit_ids || [],
           habit: t.habit || '',
           lifeAreaId: t.life_area ? (localLifeAreas.find(a => a.name === t.life_area)?.id ?? null) : null,
           life_area: t.life_area || '',
@@ -1597,6 +1752,9 @@ export default function YuYuApp() {
         problem: (extra.problem || '').trim() || null,
         life_area: lifeAreaName,
         status: 'open',
+        linked_items: linkedVirtues,
+        linked_skill_ids: extra.linkedSkillIds || [],
+        linked_habit_ids: extra.linkedHabitIds || [],
       }).select().single();
       if (error) {
         window.alert(`Ziel konnte nicht gespeichert werden: ${error.message}`);
@@ -1615,6 +1773,7 @@ export default function YuYuApp() {
           lifeAreaId: extra.lifeAreaId || null,
           linkedItems: linkedVirtues,
           linkedSkillIds: extra.linkedSkillIds || [],
+          linkedHabitIds: extra.linkedHabitIds || [],
           milestones: [],
           xp: 0,
           completed: false, failed: false,
@@ -1643,6 +1802,7 @@ export default function YuYuApp() {
     } else if (section === 'goals') {
       newItem.linkedItems = linkedVirtues;
       newItem.linkedSkillIds = extra.linkedSkillIds || [];
+      newItem.linkedHabitIds = extra.linkedHabitIds || [];
       newItem.lifeAreaId = extra.lifeAreaId || null;
       newItem.description = (extra.description || '').trim();
       newItem.learningGoal = (extra.learningGoal || '').trim();
@@ -1785,6 +1945,34 @@ export default function YuYuApp() {
     return newSkill;
   };
 
+  // Spontanes Anlegen einer Gewohnheit aus dem Ziel-Formular heraus - braucht wie Tugenden/
+  // Fähigkeiten zwingend eine Oberkategorie (siehe GROUPED_TYPES).
+  const createAndLinkHabit = async (name, groupId, newGroupName) => {
+    if (!name.trim()) return null;
+    let targetGroupId = groupId;
+    if (!targetGroupId && newGroupName?.trim()) {
+      if (session) {
+        const newGroup = await insertGroupRemote('habits', newGroupName);
+        if (!newGroup) return null;
+        setItemGroups(prev => [...prev, newGroup]);
+        targetGroupId = newGroup.id;
+      } else {
+        const newGroup = { id: Date.now(), name: newGroupName.trim(), type: 'habits', createdAt: new Date().toISOString() };
+        setItemGroups(prev => [...prev, newGroup]);
+        targetGroupId = newGroup.id;
+      }
+    }
+    if (!targetGroupId) return null;
+    if (session) {
+      const newHabit = await insertItemRemote('habits', targetGroupId, name);
+      if (newHabit) setItems(prev => [...prev, newHabit]);
+      return newHabit;
+    }
+    const newHabit = { id: Date.now() + 1, type: 'habits', name: name.trim(), xp: 0, groupId: targetGroupId, createdAt: new Date().toISOString() };
+    setItems(prev => [...prev, newHabit]);
+    return newHabit;
+  };
+
   const deleteGroup = async (id, type, label, labelPlural) => {
     const group = itemGroups.find(g => g.id === id);
     const groupItemCount = items.filter(i => i.type === type && i.groupId === id).length;
@@ -1827,9 +2015,9 @@ export default function YuYuApp() {
         user_id: session.user.id,
         text: text.trim(),
         life_area: lifeAreaName,
-        habit: (extra.habit || '').trim() || null,
         linked_items: linkedVirtues,
         linked_skill_ids: extra.linkedSkillIds || [],
+        linked_habit_ids: extra.linkedHabitIds || [],
       }).select().single();
       if (data) {
         setTodos(prev => [...prev, {
@@ -1838,6 +2026,7 @@ export default function YuYuApp() {
           completed: false, failed: false,
           linkedItems: linkedVirtues,
           linkedSkillIds: extra.linkedSkillIds || [],
+          linkedHabitIds: extra.linkedHabitIds || [],
           habit: data.habit || '',
           lifeAreaId: extra.lifeAreaId || null,
           life_area: data.life_area || '',
@@ -1852,7 +2041,8 @@ export default function YuYuApp() {
       completed: false, failed: false,
       linkedItems: linkedVirtues,
       linkedSkillIds: extra.linkedSkillIds || [],
-      habit: (extra.habit || '').trim(),
+      linkedHabitIds: extra.linkedHabitIds || [],
+      habit: '',
       lifeAreaId: extra.lifeAreaId || null,
       createdAt: new Date().toISOString(),
     }]);
@@ -1870,6 +2060,7 @@ export default function YuYuApp() {
     gainHeart(`Aufgabe erledigt: "${todo.text}"`);
     gainLifeAreaXP(todo.lifeAreaId, `Aufgabe "${todo.text}" erledigt`);
     gainSkillXP(todo.linkedSkillIds || []);
+    gainHabitXP(todo.linkedHabitIds || []);
   };
 
   // Aufgabe als gescheitert markieren: kostet ein Viertel-Herz
@@ -1956,6 +2147,17 @@ export default function YuYuApp() {
     }
   };
 
+  // Gewohnheiten sammeln XP durch verknüpfte Ziele/Aufgaben - gleiches Muster wie Tugenden/Fähigkeiten
+  const gainHabitXP = (habitIds) => {
+    if (!habitIds || habitIds.length === 0) return;
+    setItems(prev => prev.map(i => (habitIds.includes(i.id) ? { ...i, xp: (i.xp || 0) + HABIT_XP_PER_COMPLETION } : i)));
+    if (session) {
+      items.filter(i => habitIds.includes(i.id)).forEach(i => {
+        sb.from('growth_items').update({ xp: (i.xp || 0) + HABIT_XP_PER_COMPLETION }).eq('id', i.id);
+      });
+    }
+  };
+
   const deleteItem = async (id) => {
     const item = items.find(i => i.id === id);
     if (item?.type === 'goals' && session) {
@@ -1988,6 +2190,7 @@ export default function YuYuApp() {
     gainVirtueXP(item.linkedItems || []);
     gainLifeAreaXP(item.lifeAreaId, `Ziel "${item.name}" erreicht`);
     gainSkillXP(item.linkedSkillIds || []);
+    gainHabitXP(item.linkedHabitIds || []);
   };
 
   const toggleSelectItem = (id) => {
@@ -2090,21 +2293,21 @@ export default function YuYuApp() {
     if (session) {
       await sb.from('yuyu_todos').update({
         text: updates.text.trim(),
-        habit: (updates.habit || '').trim() || null,
         life_area: lifeAreaName,
         linked_items: updates.linkedItems || [],
         linked_skill_ids: updates.linkedSkillIds || [],
+        linked_habit_ids: updates.linkedHabitIds || [],
         updated_at: new Date().toISOString(),
       }).eq('id', todoId);
     }
     setTodos(prev => prev.map(t => (t.id === todoId ? {
       ...t,
       text: updates.text.trim(),
-      habit: (updates.habit || '').trim(),
       lifeAreaId: updates.lifeAreaId || null,
       life_area: lifeAreaName || '',
       linkedItems: updates.linkedItems || [],
       linkedSkillIds: updates.linkedSkillIds || [],
+      linkedHabitIds: updates.linkedHabitIds || [],
     } : t)));
   };
 
@@ -2112,6 +2315,7 @@ export default function YuYuApp() {
   const allVirtueItems = items.filter(i => i.type === 'principles');
   const allLifeAreaItems = items.filter(i => i.type === 'life-areas');
   const allSkillItems = items.filter(i => i.type === 'skills');
+  const allHabitItems = items.filter(i => i.type === 'habits');
 
   // Text in mehrere Zeilen umbrechen, damit er ins Puzzleteil passt
   const wrapPuzzleText = (name, maxCharsPerLine = 11) => {
@@ -2985,9 +3189,10 @@ export default function YuYuApp() {
                 placeholder="+ Aufgabe hinzufügen"
                 virtues={allVirtueItems}
                 skills={allSkillItems}
+                habits={allHabitItems}
                 lifeAreas={allLifeAreaItems}
-                onSubmit={({ text, linkedIds, linkedSkillIds, habit, lifeAreaId }) =>
-                  addTodo(text, linkedIds, { linkedSkillIds, habit, lifeAreaId })
+                onSubmit={({ text, linkedIds, linkedSkillIds, linkedHabitIds, lifeAreaId }) =>
+                  addTodo(text, linkedIds, { linkedSkillIds, linkedHabitIds, lifeAreaId })
                 }
                 wrapperClassName="flex-1 min-w-0"
                 className="w-full text-base sm:text-sm font-light text-slate-400 placeholder-slate-300 outline-none focus:text-slate-900"
@@ -3004,8 +3209,9 @@ export default function YuYuApp() {
                 {openTodos.map(todo => {
                   const todoVirtues = (todo.linkedItems || []).map(vid => allVirtueItems.find(v => v.id === vid)).filter(Boolean);
                   const todoSkills = (todo.linkedSkillIds || []).map(sid => allSkillItems.find(s => s.id === sid)).filter(Boolean);
+                  const todoHabits = (todo.linkedHabitIds || []).map(hid => allHabitItems.find(h => h.id === hid)).filter(Boolean);
                   const todoLifeArea = allLifeAreaItems.find(a => a.id === todo.lifeAreaId);
-                  const hasExtras = todo.habit || todoLifeArea || todoVirtues.length > 0 || todoSkills.length > 0;
+                  const hasExtras = todo.habit || todoLifeArea || todoVirtues.length > 0 || todoSkills.length > 0 || todoHabits.length > 0;
                   return (
                   <div key={todo.id} className="flex items-start gap-3 py-1.5 px-1 group/task hover:bg-slate-50 rounded transition">
                     <button
@@ -3033,6 +3239,9 @@ export default function YuYuApp() {
                           ))}
                           {todoSkills.map(s => (
                             <span key={s.id} className="px-1.5 py-0.5 bg-violet-50 text-violet-700 text-[10px] rounded-full">{s.name}</span>
+                          ))}
+                          {todoHabits.map(h => (
+                            <span key={h.id} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] rounded-full">{h.name}</span>
                           ))}
                         </div>
                       )}
@@ -3108,6 +3317,7 @@ export default function YuYuApp() {
                 todo={detailTodo}
                 virtues={allVirtueItems}
                 skills={allSkillItems}
+                habits={allHabitItems}
                 lifeAreas={allLifeAreaItems}
                 onSave={(updates) => updateTodoDetails(detailTodo.id, updates)}
                 onClose={() => setDetailTodoId(null)}
@@ -3483,13 +3693,16 @@ export default function YuYuApp() {
             <GoalForm
               virtues={allVirtueItems}
               skills={allSkillItems}
+              habits={allHabitItems}
               lifeAreas={allLifeAreaItems}
               virtueGroups={itemGroups.filter(g => g.type === 'principles')}
               skillGroups={itemGroups.filter(g => g.type === 'skills')}
+              habitGroups={itemGroups.filter(g => g.type === 'habits')}
               onCreateVirtue={createAndLinkVirtue}
               onCreateSkill={createAndLinkSkill}
-              onSubmit={({ lifeAreaId, learningGoal, title, problem, description, linkedIds, linkedSkillIds }) =>
-                addItem(title, linkedIds, { lifeAreaId, learningGoal, description, problem, linkedSkillIds })
+              onCreateHabit={createAndLinkHabit}
+              onSubmit={({ lifeAreaId, learningGoal, title, problem, description, linkedIds, linkedSkillIds, linkedHabitIds }) =>
+                addItem(title, linkedIds, { lifeAreaId, learningGoal, description, problem, linkedSkillIds, linkedHabitIds })
               }
             />
           ) : (
@@ -3649,7 +3862,7 @@ export default function YuYuApp() {
                         <span className="text-slate-400 uppercase tracking-wide text-[10px] mr-1">Ausgang</span>{item.description}
                       </p>
                     )}
-                    {section === 'goals' && (item.linkedItems?.length > 0 || item.linkedSkillIds?.length > 0) && (
+                    {section === 'goals' && (item.linkedItems?.length > 0 || item.linkedSkillIds?.length > 0 || item.linkedHabitIds?.length > 0) && (
                       <div className="flex flex-wrap gap-1 mb-2">
                         {(item.linkedItems || []).map(vid => {
                           const v = allVirtueItems.find(vv => vv.id === vid);
@@ -3666,6 +3879,15 @@ export default function YuYuApp() {
                           return (
                             <span key={`skill-${sid}`} className="px-2 py-0.5 bg-violet-50 text-violet-700 text-[10px] rounded-full">
                               {s.name}
+                            </span>
+                          );
+                        })}
+                        {(item.linkedHabitIds || []).map(hid => {
+                          const h = allHabitItems.find(hh => hh.id === hid);
+                          if (!h) return null;
+                          return (
+                            <span key={`habit-${hid}`} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] rounded-full">
+                              {h.name}
                             </span>
                           );
                         })}
