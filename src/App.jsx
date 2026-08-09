@@ -150,29 +150,37 @@ function GoalForm({ virtues, skills, habits, lifeAreas, virtueGroups, skillGroup
   const [linkedHabitIds, setLinkedHabitIds] = useState([]);
   const [pendingGroupItemName, setPendingGroupItemName] = useState('');
   const [creatingNewGroup, setCreatingNewGroup] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
   const inputRef = useRef(null);
+  const isFirstRender = useRef(true);
 
   // Fokus wandert mit, damit man ohne erneutes Antippen weiterschreiben kann - auch wenn sich
   // innerhalb der virtue-group/skill-group-Stufe zwischen Liste und "neue Oberkategorie"-Eingabe umschaltet.
+  // Beim allerersten Rendern NICHT automatisch fokussieren, sonst poppt das Vorschläge-Dropdown der
+  // ersten Stufe sofort auf, ohne dass draufgeklickt wurde.
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     inputRef.current?.focus();
   }, [stage, creatingNewGroup]);
 
-  // Zeigt Vorschläge als durchsuchbares Dropdown, sobald die Stufe aktiv ist - auch ohne
-  // Texteingabe (zum Durchklicken), gefiltert sobald getippt wird.
-  const lifeAreaSuggestions = stage === 'lifearea'
+  // Zeigt Vorschläge als durchsuchbares Dropdown, aber erst sobald das Feld angeklickt/fokussiert
+  // wurde - nicht direkt beim Öffnen der Stufe.
+  const lifeAreaSuggestions = stage === 'lifearea' && inputFocused
     ? lifeAreas.filter(a => a.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5)
     : [];
 
-  const virtueSuggestions = stage === 'virtue'
+  const virtueSuggestions = stage === 'virtue' && inputFocused
     ? virtues.filter(v => v.name.toLowerCase().includes(value.toLowerCase()) && !linkedIds.includes(v.id)).slice(0, 5)
     : [];
 
-  const skillSuggestions = stage === 'skill'
+  const skillSuggestions = stage === 'skill' && inputFocused
     ? skills.filter(s => s.name.toLowerCase().includes(value.toLowerCase()) && !linkedSkillIds.includes(s.id)).slice(0, 5)
     : [];
 
-  const habitSuggestions = stage === 'habit'
+  const habitSuggestions = stage === 'habit' && inputFocused
     ? habits.filter(h => h.name.toLowerCase().includes(value.toLowerCase()) && !linkedHabitIds.includes(h.id)).slice(0, 5)
     : [];
 
@@ -550,6 +558,8 @@ function GoalForm({ virtues, skills, habits, lifeAreas, virtueGroups, skillGroup
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={handleKeyDown}
+              onFocus={() => setInputFocused(true)}
+              onBlur={() => setInputFocused(false)}
               placeholder={placeholders[stage]}
               className="w-full px-0 py-2 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-base"
             />
