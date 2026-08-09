@@ -689,14 +689,29 @@ function GoalProgressRay({ milestones }) {
 
 // Meilensteine eines Ziels: werden nachträglich hinzugefügt, zeigen den Fortschritts-Strahl,
 // eine Liste zum Abhaken/Löschen und ein Eingabefeld für neue Meilensteine.
-function GoalMilestones({ goal, onAdd, onToggle, onDelete }) {
+function GoalMilestones({ goal, onAdd, onToggle, onDelete, onEdit }) {
   const [value, setValue] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState('');
   const milestones = goal.milestones || [];
 
   const submit = () => {
     if (!value.trim()) return;
     onAdd(value);
     setValue('');
+  };
+
+  const startEdit = (m) => {
+    setEditingId(m.id);
+    setEditValue(m.name);
+  };
+
+  const saveEdit = () => {
+    if (editValue.trim() && editValue.trim() !== milestones.find(m => m.id === editingId)?.name) {
+      onEdit(editingId, editValue.trim());
+    }
+    setEditingId(null);
+    setEditValue('');
   };
 
   return (
@@ -713,9 +728,27 @@ function GoalMilestones({ goal, onAdd, onToggle, onDelete }) {
                   <Circle className="w-3.5 h-3.5 text-slate-300" strokeWidth={1.5} />
                 )}
               </button>
-              <span className={`flex-1 text-xs font-light ${m.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
-                {m.name}
-              </span>
+              {editingId === m.id ? (
+                <input
+                  type="text"
+                  autoFocus
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onBlur={saveEdit}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); saveEdit(); }
+                    if (e.key === 'Escape') { e.preventDefault(); setEditingId(null); setEditValue(''); }
+                  }}
+                  className="flex-1 min-w-0 text-xs font-light text-slate-900 bg-white border-b border-blue-400 outline-none"
+                />
+              ) : (
+                <span
+                  onClick={() => startEdit(m)}
+                  className={`flex-1 text-xs font-light cursor-text ${m.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}
+                >
+                  {m.name}
+                </span>
+              )}
               <button
                 onClick={() => onDelete(m.id)}
                 className="p-1 -m-1 text-slate-300 hover:text-red-500 transition opacity-0 group-hover/milestone:opacity-100 flex-shrink-0"
@@ -742,7 +775,7 @@ function GoalMilestones({ goal, onAdd, onToggle, onDelete }) {
 // Tugenden/Fähigkeiten/Gewohnheiten und Lebensbereich lassen sich hier nachträglich
 // ändern (bei der Erstellung im GoalForm-Wizard schon möglich, hier zusätzlich editierbar),
 // dazu Meilensteine und alle mit diesem Ziel verknüpften Aufgaben.
-function GoalDetailModal({ goal, virtues, skills, habits, lifeAreas, todos, onSave, onClose, onDelete, onAddMilestone, onToggleMilestone, onDeleteMilestone, onLinkTodo, onUnlinkTodo }) {
+function GoalDetailModal({ goal, virtues, skills, habits, lifeAreas, todos, onSave, onClose, onDelete, onAddMilestone, onToggleMilestone, onDeleteMilestone, onEditMilestone, onLinkTodo, onUnlinkTodo }) {
   const [title, setTitle] = useState(goal.title || goal.name || '');
   const [problem, setProblem] = useState(goal.problem || '');
   const [description, setDescription] = useState(goal.description || '');
@@ -944,7 +977,7 @@ function GoalDetailModal({ goal, virtues, skills, habits, lifeAreas, todos, onSa
 
         <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Meilensteine</label>
         <div className="mb-4">
-          <GoalMilestones goal={goal} onAdd={onAddMilestone} onToggle={onToggleMilestone} onDelete={onDeleteMilestone} />
+          <GoalMilestones goal={goal} onAdd={onAddMilestone} onToggle={onToggleMilestone} onDelete={onDeleteMilestone} onEdit={onEditMilestone} />
         </div>
 
         <label className="block text-xs text-slate-400 uppercase tracking-wide mb-1.5">Verknüpfte Aufgaben</label>
@@ -2138,6 +2171,21 @@ export default function YuYuApp() {
     }
     setItems(items.map(i => (i.id === goalId
       ? { ...i, milestones: (i.milestones || []).filter(m => m.id !== milestoneId) }
+      : i
+    )));
+  };
+
+  const editMilestone = async (goalId, milestoneId, name) => {
+    if (!name || !name.trim()) return;
+    if (session) {
+      const { error } = await sb.from('yuyu_goal_milestones').update({ name: name.trim() }).eq('id', milestoneId);
+      if (error) {
+        window.alert(`Meilenstein konnte nicht geändert werden: ${error.message}`);
+        return;
+      }
+    }
+    setItems(items.map(i => (i.id === goalId
+      ? { ...i, milestones: (i.milestones || []).map(m => (m.id === milestoneId ? { ...m, name: name.trim() } : m)) }
       : i
     )));
   };
@@ -4237,6 +4285,7 @@ export default function YuYuApp() {
                         onAdd={(name) => addMilestone(item.id, name)}
                         onToggle={(milestoneId) => toggleMilestone(item.id, milestoneId)}
                         onDelete={(milestoneId) => deleteMilestone(item.id, milestoneId)}
+                        onEdit={(milestoneId, name) => editMilestone(item.id, milestoneId, name)}
                       />
                     )}
 
@@ -4284,6 +4333,7 @@ export default function YuYuApp() {
               onAddMilestone={(name) => addMilestone(detailGoal.id, name)}
               onToggleMilestone={(milestoneId) => toggleMilestone(detailGoal.id, milestoneId)}
               onDeleteMilestone={(milestoneId) => deleteMilestone(detailGoal.id, milestoneId)}
+              onEditMilestone={(milestoneId, name) => editMilestone(detailGoal.id, milestoneId, name)}
               onLinkTodo={(todoId) => setTodoGoalLink(todoId, detailGoal.id)}
               onUnlinkTodo={(todoId) => setTodoGoalLink(todoId, null)}
             />
