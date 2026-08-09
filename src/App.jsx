@@ -13,7 +13,7 @@ import {
   LIFE_AREA_XP_PER_COMPLETION, SKILL_XP_PER_COMPLETION, VIRTUE_XP_PER_COMPLETION,
   HABIT_XP_PER_COMPLETION, GOAL_TITLE_MAX_LENGTH,
 } from './lib/constants.js';
-import GoalMilestones from './components/GoalMilestones.jsx';
+import GoalMilestonesSummary from './components/GoalMilestonesSummary.jsx';
 import GoalDetailModal from './components/GoalDetailModal.jsx';
 import GoalForm from './components/GoalForm.jsx';
 import TodoWizardInput from './components/TodoWizardInput.jsx';
@@ -2625,13 +2625,7 @@ export default function YuYuApp() {
                     </div>
 
                     {section === 'goals' && item.milestones?.length > 0 && (
-                      <GoalMilestones
-                        goal={item}
-                        onAdd={(name) => addMilestone(item.id, name)}
-                        onToggle={(milestoneId) => toggleMilestone(item.id, milestoneId)}
-                        onDelete={(milestoneId) => deleteMilestone(item.id, milestoneId)}
-                        onEdit={(milestoneId, name) => editMilestone(item.id, milestoneId, name)}
-                      />
+                      <GoalMilestonesSummary milestones={item.milestones} />
                     )}
                   </div>
                 </div>
