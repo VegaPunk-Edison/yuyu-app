@@ -74,14 +74,24 @@ export default function GoalMilestones({ goal, onAdd, onToggle, onDelete, onEdit
           ))}
         </div>
       )}
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
-        placeholder="Meilenstein hinzufügen"
-        className="w-full px-0 py-1 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-xs"
-      />
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
+          placeholder="Meilenstein hinzufügen"
+          className="flex-1 min-w-0 px-0 py-1 bg-white text-slate-900 border-b border-slate-200 placeholder-slate-400 focus:border-blue-500 outline-none font-light text-xs"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!value.trim()}
+          className="flex-shrink-0 px-2 py-1 text-xs text-blue-600 hover:text-blue-700 disabled:text-slate-300 transition"
+        >
+          Hinzufügen
+        </button>
+      </div>
     </div>
   );
 }
