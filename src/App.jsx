@@ -1890,47 +1890,72 @@ export default function YuYuApp() {
 
         <div className="w-[min(80vw,300px)] sm:w-[320px]">
           {(() => {
-            // "Triforce"-Kachelung: ein großes gleichseitiges Dreieck (Spitze oben mittig) wird über
-            // die Seitenmittelpunkte in 4 exakt gleich große Teildreiecke zerlegt (3 nach oben, 1 in
-            // der Mitte nach unten) - dadurch liegen die Kanten zwangsläufig bündig aneinander, statt
-            // wie vorher per CSS-Positionierung nur angenähert zu werden.
+            // Gleiche "Triforce"-Grundgeometrie wie zuvor (großes Dreieck über Seitenmittelpunkte in
+            // 4 kongruente Teildreiecke zerlegt) - aber jedes Teildreieck wird zusätzlich um seinen
+            // eigenen Mittelpunkt herum verkleinert (SHRINK), statt die volle Kachel auszufüllen. Da
+            // alle 4 Teildreiecke kongruent sind (gleicher Mittelpunkt-zu-Kante-Abstand), ergibt der
+            // gleiche Schrumpf-Faktor bei allen automatisch denselben Abstand zwischen je zwei
+            // benachbarten Dreiecken - exakt gleich groß, exakt gleicher Abstand überall, ohne von Hand
+            // nachjustierte Werte pro Dreieck.
+            const SHRINK = 0.8;
             const T = [50, 0];
             const BL = [0, 86.6];
             const BR = [100, 86.6];
             const M1 = [25, 43.3]; // Mittelpunkt T-BL
             const M2 = [75, 43.3]; // Mittelpunkt T-BR
             const M3 = [50, 86.6]; // Mittelpunkt BL-BR
-            const pts = (...p) => p.map(([x, y]) => `${x},${y}`).join(' ');
+            const centroid = (pts) => [
+              pts.reduce((s, [x]) => s + x, 0) / pts.length,
+              pts.reduce((s, [, y]) => s + y, 0) / pts.length,
+            ];
+            const shrinkPoint = (c, [x, y], factor) => [c[0] + (x - c[0]) * factor, c[1] + (y - c[1]) * factor];
+            const shrink = (pts, factor) => {
+              const c = centroid(pts);
+              return pts.map(p => shrinkPoint(c, p, factor));
+            };
+            const toPolygon = (pts) => pts.map(([x, y]) => `${x},${y}`).join(' ');
 
             const outer = [
-              { type: 'principles', label: 'Tugend', polygon: pts(T, M1, M2), labelY: 33.3, levelY: 38.3, labelX: 50 },
-              { type: 'habits', label: 'Gewohnheiten', polygon: pts(M1, BL, M3), labelY: 76.6, levelY: 81.6, labelX: 25 },
-              { type: 'skills', label: 'Fähigkeiten', polygon: pts(M2, M3, BR), labelY: 76.6, levelY: 81.6, labelX: 75 },
+              { type: 'principles', label: 'Tugend', verts: [T, M1, M2], labelAnchor: [50, 33.3], levelAnchor: [50, 38.3] },
+              { type: 'habits', label: 'Gewohnheiten', verts: [M1, BL, M3], labelAnchor: [25, 76.6], levelAnchor: [25, 81.6] },
+              { type: 'skills', label: 'Fähigkeiten', verts: [M2, M3, BR], labelAnchor: [75, 76.6], levelAnchor: [75, 81.6] },
             ];
 
             return (
               <svg viewBox="0 0 100 86.6" className="w-full h-auto">
-                {outer.map(({ type, label, polygon, labelX, labelY, levelY }) => {
+                {outer.map(({ type, label, verts, labelAnchor, levelAnchor }) => {
                   const totalXP = items.filter(i => i.type === type).reduce((sum, i) => sum + (i.xp || 0), 0);
                   const level = computeLevelFromXP(totalXP).level;
+                  const c = centroid(verts);
+                  const shrunk = shrink(verts, SHRINK);
+                  const [labelX, labelY] = shrinkPoint(c, labelAnchor, SHRINK);
+                  const [levelX, levelY] = shrinkPoint(c, levelAnchor, SHRINK);
                   return (
                     <g key={type} onClick={() => goTo(type)} className="cursor-pointer transition hover:opacity-70">
-                      <polygon points={polygon} fill="white" stroke="#7c9fd6" strokeWidth="1.5" />
+                      <polygon points={toPolygon(shrunk)} fill="white" stroke="#7c9fd6" strokeWidth="1.5" />
                       <text x={labelX} y={labelY} textAnchor="middle" fontSize="3.6" className="font-light fill-slate-900" style={{ fontFamily: 'inherit' }}>
                         {label}
                       </text>
-                      <text x={labelX} y={levelY} textAnchor="middle" fontSize="2.8" className="font-light fill-slate-400" style={{ fontFamily: 'inherit' }}>
+                      <text x={levelX} y={levelY} textAnchor="middle" fontSize="2.8" className="font-light fill-slate-400" style={{ fontFamily: 'inherit' }}>
                         Lvl {level}
                       </text>
                     </g>
                   );
                 })}
-                <g onClick={() => setSection('you-timeline')} className="cursor-pointer transition hover:opacity-70">
-                  <polygon points={pts(M1, M2, M3)} fill="white" stroke="#7c9fd6" strokeWidth="1.5" />
-                  <text x={50} y={53.3} textAnchor="middle" fontSize="4.2" className="font-light fill-slate-900" style={{ fontFamily: 'inherit' }}>
-                    YOU
-                  </text>
-                </g>
+                {(() => {
+                  const verts = [M1, M2, M3];
+                  const c = centroid(verts);
+                  const shrunk = shrink(verts, SHRINK);
+                  const [labelX, labelY] = shrinkPoint(c, [50, 53.3], SHRINK);
+                  return (
+                    <g onClick={() => setSection('you-timeline')} className="cursor-pointer transition hover:opacity-70">
+                      <polygon points={toPolygon(shrunk)} fill="white" stroke="#7c9fd6" strokeWidth="1.5" />
+                      <text x={labelX} y={labelY} textAnchor="middle" fontSize="4.2" className="font-light fill-slate-900" style={{ fontFamily: 'inherit' }}>
+                        YOU
+                      </text>
+                    </g>
+                  );
+                })()}
               </svg>
             );
           })()}
