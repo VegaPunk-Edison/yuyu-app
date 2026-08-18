@@ -1731,7 +1731,7 @@ export default function YuYuApp() {
           <h1 className="text-5xl sm:text-6xl font-light text-slate-900 tracking-tight mb-2">
             YOU
           </h1>
-          <p className="text-slate-400 text-sm font-light">your growth matters</p>
+          <p className="text-slate-400 text-sm font-light">growth matters</p>
         </div>
 
         {/* SVG Pie Chart Navigation - Minimalist */}

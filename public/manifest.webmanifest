@@ -1,7 +1,7 @@
 {
   "name": "YOU",
   "short_name": "YOU",
-  "description": "your growth matters",
+  "description": "growth matters",
   "start_url": "/YOU/",
   "scope": "/YOU/",
   "display": "standalone",
