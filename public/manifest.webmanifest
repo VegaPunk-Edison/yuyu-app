@@ -2,13 +2,13 @@
   "name": "YOU",
   "short_name": "YOU",
   "description": "your growth matters",
-  "start_url": "/yuyu-app/",
-  "scope": "/yuyu-app/",
+  "start_url": "/you/",
+  "scope": "/you/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#863bff",
   "icons": [
-    { "src": "/yuyu-app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/yuyu-app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+    { "src": "/you/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/you/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
   ]
 }
