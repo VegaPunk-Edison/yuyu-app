@@ -24,7 +24,7 @@ export default function LoginScreen({ onLogin }) {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', padding: '24px' }}>
       <div style={{ width: '100%', maxWidth: '360px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: '300', letterSpacing: '4px', textAlign: 'center', marginBottom: '8px', color: '#1e293b' }}>YuYu</h1>
+        <h1 style={{ fontSize: '28px', fontWeight: '300', letterSpacing: '4px', textAlign: 'center', marginBottom: '8px', color: '#1e293b' }}>YOU</h1>
         <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: '300', marginBottom: '40px' }}>Melde dich mit deinen PIFA-Zugangsdaten an</p>
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <input

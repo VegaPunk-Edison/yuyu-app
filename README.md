@@ -1,6 +1,6 @@
-# YuYu
+# YOU
 
-YuYu ist eine Gamification-App für persönliches Wachstum: Ziele, Lebensbereiche, Gewohnheiten, Aufgaben und Tugenden leveln über XP, die man beim Erledigen verknüpfter Aufgaben sammelt.
+YOU ist eine Gamification-App für persönliches Wachstum: Ziele, Lebensbereiche, Gewohnheiten, Aufgaben und Tugenden leveln über XP, die man beim Erledigen verknüpfter Aufgaben sammelt.
 
 ## Entwicklung
 

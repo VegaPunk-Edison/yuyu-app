@@ -327,7 +327,7 @@ export default function YuYuApp() {
         if (Array.isArray(data.heartLog)) setHeartLog(data.heartLog);
         if (typeof data.penaltyTask === 'string') setPenaltyTask(data.penaltyTask);
       } catch (err) {
-        window.alert('Datei konnte nicht gelesen werden - ist es eine gültige YuYu-Backup-Datei?');
+        window.alert('Datei konnte nicht gelesen werden - ist es eine gültige YOU-Backup-Datei?');
       }
     };
     reader.readAsText(file);
@@ -1729,7 +1729,7 @@ export default function YuYuApp() {
 
         <div className="mb-10 sm:mb-16 text-center">
           <h1 className="text-5xl sm:text-6xl font-light text-slate-900 tracking-tight mb-2">
-            YuYu
+            YOU
           </h1>
           <p className="text-slate-400 text-sm font-light">your growth matters</p>
         </div>
@@ -2264,27 +2264,36 @@ export default function YuYuApp() {
             )}
 
             {(() => {
-              // Projekt: ein verknüpftes Ziel - bevorzugt ein noch aktives (weder erledigt noch gescheitert)
-              const project = linkedGoals.find(g => !g.completed && !g.failed) || linkedGoals[0];
+              // Projekte: bis zu 3 verknüpfte Ziele - bevorzugt noch aktive (weder erledigt noch
+              // gescheitert), erst bei weniger als 3 aktiven mit erledigten/gescheiterten aufgefüllt.
+              const projects = [
+                ...linkedGoals.filter(g => !g.completed && !g.failed),
+                ...linkedGoals.filter(g => g.completed || g.failed),
+              ].slice(0, 3);
               // Aktuelle Aufgaben: nur offene, auf 3 begrenzt
               const currentTodos = linkedTodos.filter(t => !t.completed && !t.failed).slice(0, 3);
               const xpSource = lifeAreaXPSource[openArea.id];
 
-              if (!project && currentTodos.length === 0 && !xpSource) {
+              if (projects.length === 0 && currentTodos.length === 0 && !xpSource) {
                 return <p className="text-sm text-slate-400 font-light max-w-md">Noch keine verknüpften Ziele oder Aufgaben.</p>;
               }
               return (
                 <div className="max-w-md space-y-4">
-                  {project && (
+                  {projects.length > 0 && (
                     <div>
-                      <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Projekt</p>
-                      <p
-                        className={`text-sm font-light ${
-                          project.completed ? 'text-green-700 line-through' : project.failed ? 'text-slate-400 line-through' : 'text-slate-900'
-                        }`}
-                      >
-                        {project.name}
-                      </p>
+                      <p className="text-xs text-slate-400 uppercase tracking-wide mb-1.5">Projekte</p>
+                      <div className="space-y-1">
+                        {projects.map(project => (
+                          <p
+                            key={project.id}
+                            className={`text-sm font-light ${
+                              project.completed ? 'text-green-700 line-through' : project.failed ? 'text-slate-400 line-through' : 'text-slate-900'
+                            }`}
+                          >
+                            {project.name}
+                          </p>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {currentTodos.length > 0 && (
