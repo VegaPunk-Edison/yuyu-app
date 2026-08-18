@@ -1915,9 +1915,75 @@ export default function YuYuApp() {
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => setSection('you-timeline')}
+            className="absolute inset-0 m-auto w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center text-sm sm:text-base font-light tracking-wide text-slate-900 hover:text-blue-600 transition"
+          >
+            YOU
+          </button>
         </div>
 
         <p className="text-slate-400 text-xs font-light tracking-wide mt-8">click a corner to begin</p>
+      </div>
+    );
+  }
+
+  // YOU TIMELINE: alle Ziele und Aufgaben zusammen, chronologisch (neueste zuerst)
+  if (section === 'you-timeline') {
+    const timelineItems = [
+      ...items.filter(i => i.type === 'goals').map(g => ({
+        kind: 'goal', id: g.id, text: g.title || g.name,
+        completed: g.completed, failed: g.failed, createdAt: g.createdAt,
+      })),
+      ...todos.map(t => ({
+        kind: 'todo', id: t.id, text: t.text,
+        completed: t.completed, failed: t.failed, createdAt: t.createdAt,
+      })),
+    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
+          <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
+            <button
+              onClick={() => setSection('you')}
+              className="p-2.5 -ml-2.5 hover:bg-blue-50 rounded transition text-blue-600 hover:text-blue-700"
+            >
+              <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
+            </button>
+            <div>
+              <h1 className="text-2xl font-light text-slate-900 tracking-tight">YOU</h1>
+              <p className="text-xs text-slate-400 font-light mt-0.5">
+                {timelineItems.length} {timelineItems.length === 1 ? 'Eintrag' : 'Einträge'}
+              </p>
+            </div>
+          </div>
+
+          {timelineItems.length === 0 ? (
+            <p className="text-slate-400 text-sm font-light text-center py-12">Noch keine Ziele oder Aufgaben.</p>
+          ) : (
+            <div className="space-y-0.5">
+              {timelineItems.map(item => (
+                <div key={`${item.kind}-${item.id}`} className="flex items-center gap-3 py-1.5 px-1">
+                  <span className={`text-[10px] uppercase tracking-wide flex-shrink-0 w-14 ${item.kind === 'goal' ? 'text-blue-600' : 'text-slate-400'}`}>
+                    {item.kind === 'goal' ? 'Ziel' : 'Aufgabe'}
+                  </span>
+                  <span
+                    className={`flex-1 min-w-0 text-sm font-light truncate ${
+                      item.completed ? 'text-green-700 line-through' : item.failed ? 'text-slate-400 line-through' : 'text-slate-900'
+                    }`}
+                  >
+                    {item.text}
+                  </span>
+                  <span className="text-[10px] text-slate-300 flex-shrink-0">
+                    {new Date(item.createdAt).toLocaleDateString('de-DE')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
