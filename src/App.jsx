@@ -1918,12 +1918,12 @@ export default function YuYuApp() {
           <button
             type="button"
             onClick={() => setSection('you-timeline')}
-            className="absolute inset-0 m-auto w-16 h-16 sm:w-20 sm:h-20 transition hover:opacity-70"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 sm:w-28 sm:h-28 transition hover:opacity-70"
           >
             <svg viewBox="0 0 100 100" className="w-full h-full">
               <polygon points="50,96 97,8 3,8" fill="white" stroke="#7c9fd6" strokeWidth="1.5" />
             </svg>
-            <span className="absolute inset-x-0 top-4 sm:top-5 text-center text-[10px] sm:text-xs font-light tracking-wide text-slate-900 px-1">
+            <span className="absolute inset-x-0 top-5 sm:top-6 text-center text-xs sm:text-sm font-light tracking-wide text-slate-900 px-1">
               YOU
             </span>
           </button>
