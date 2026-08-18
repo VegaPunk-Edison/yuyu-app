@@ -1888,45 +1888,52 @@ export default function YuYuApp() {
           <h1 className="text-2xl sm:text-3xl font-light text-slate-900 tracking-tight">YOU</h1>
         </div>
 
-        <div className="relative w-[min(80vw,300px)] h-[min(80vw,300px)] sm:w-[320px] sm:h-[320px]">
-          {[
-            { type: 'principles', label: 'Tugend', levelLabel: 'Lvl', position: 'left-1/2 top-0 -translate-x-1/2' },
-            { type: 'habits', label: 'Gewohnheiten', levelLabel: 'Lvl', position: 'left-0 bottom-0' },
-            { type: 'skills', label: 'Fähigkeiten', levelLabel: 'Lvl', position: 'right-0 bottom-0' },
-          ].map(({ type, label, levelLabel, position }) => {
-            const totalXP = items.filter(i => i.type === type).reduce((sum, i) => sum + (i.xp || 0), 0);
-            const level = computeLevelFromXP(totalXP).level;
+        <div className="w-[min(80vw,300px)] sm:w-[320px]">
+          {(() => {
+            // "Triforce"-Kachelung: ein großes gleichseitiges Dreieck (Spitze oben mittig) wird über
+            // die Seitenmittelpunkte in 4 exakt gleich große Teildreiecke zerlegt (3 nach oben, 1 in
+            // der Mitte nach unten) - dadurch liegen die Kanten zwangsläufig bündig aneinander, statt
+            // wie vorher per CSS-Positionierung nur angenähert zu werden.
+            const T = [50, 0];
+            const BL = [0, 86.6];
+            const BR = [100, 86.6];
+            const M1 = [25, 43.3]; // Mittelpunkt T-BL
+            const M2 = [75, 43.3]; // Mittelpunkt T-BR
+            const M3 = [50, 86.6]; // Mittelpunkt BL-BR
+            const pts = (...p) => p.map(([x, y]) => `${x},${y}`).join(' ');
+
+            const outer = [
+              { type: 'principles', label: 'Tugend', polygon: pts(T, M1, M2), labelY: 33.3, levelY: 38.3, labelX: 50 },
+              { type: 'habits', label: 'Gewohnheiten', polygon: pts(M1, BL, M3), labelY: 76.6, levelY: 81.6, labelX: 25 },
+              { type: 'skills', label: 'Fähigkeiten', polygon: pts(M2, M3, BR), labelY: 76.6, levelY: 81.6, labelX: 75 },
+            ];
+
             return (
-              <button
-                key={type}
-                type="button"
-                onClick={() => goTo(type)}
-                className={`absolute ${position} w-28 h-28 sm:w-32 sm:h-32 transition hover:opacity-70`}
-              >
-                <svg viewBox="0 0 100 100" className="w-full h-full">
-                  <polygon points="50,4 97,92 3,92" fill="white" stroke="#7c9fd6" strokeWidth="1.5" />
-                </svg>
-                <span className="absolute inset-x-0 bottom-6 sm:bottom-7 text-center text-[10px] sm:text-xs font-light tracking-wide text-slate-900 px-2">
-                  {label}
-                </span>
-                <span className="absolute inset-x-0 bottom-3 text-center text-[9px] sm:text-[10px] font-light text-slate-400 px-2">
-                  {levelLabel} {level}
-                </span>
-              </button>
+              <svg viewBox="0 0 100 86.6" className="w-full h-auto">
+                {outer.map(({ type, label, polygon, labelX, labelY, levelY }) => {
+                  const totalXP = items.filter(i => i.type === type).reduce((sum, i) => sum + (i.xp || 0), 0);
+                  const level = computeLevelFromXP(totalXP).level;
+                  return (
+                    <g key={type} onClick={() => goTo(type)} className="cursor-pointer transition hover:opacity-70">
+                      <polygon points={polygon} fill="white" stroke="#7c9fd6" strokeWidth="1.5" />
+                      <text x={labelX} y={labelY} textAnchor="middle" fontSize="3.6" className="font-light fill-slate-900" style={{ fontFamily: 'inherit' }}>
+                        {label}
+                      </text>
+                      <text x={labelX} y={levelY} textAnchor="middle" fontSize="2.8" className="font-light fill-slate-400" style={{ fontFamily: 'inherit' }}>
+                        Lvl {level}
+                      </text>
+                    </g>
+                  );
+                })}
+                <g onClick={() => setSection('you-timeline')} className="cursor-pointer transition hover:opacity-70">
+                  <polygon points={pts(M1, M2, M3)} fill="white" stroke="#7c9fd6" strokeWidth="1.5" />
+                  <text x={50} y={53.3} textAnchor="middle" fontSize="4.2" className="font-light fill-slate-900" style={{ fontFamily: 'inherit' }}>
+                    YOU
+                  </text>
+                </g>
+              </svg>
             );
-          })}
-          <button
-            type="button"
-            onClick={() => setSection('you-timeline')}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 sm:w-28 sm:h-28 transition hover:opacity-70"
-          >
-            <svg viewBox="0 0 100 100" className="w-full h-full">
-              <polygon points="50,96 97,8 3,8" fill="white" stroke="#7c9fd6" strokeWidth="1.5" />
-            </svg>
-            <span className="absolute inset-x-0 top-5 sm:top-6 text-center text-xs sm:text-sm font-light tracking-wide text-slate-900 px-1">
-              YOU
-            </span>
-          </button>
+          })()}
         </div>
 
         <p className="text-slate-400 text-xs font-light tracking-wide mt-8">click a corner to begin</p>
