@@ -160,8 +160,16 @@ export default function YuYuApp() {
               const match = (upsertedGroups ?? []).find(row => row.type === local.type && row.name === local.name);
               if (match) groupIdMap[local.id] = match.id;
             }
+            // growth_items hat (anders als growth_item_groups) keinen UNIQUE(user_id, type, name)-
+            // Constraint, und dieser Insert lief bisher ungeprüft gegen den Server - lief die Migration
+            // schon einmal von einem anderen Gerät/Browser aus (eigenes localStorage, eigenes Flag),
+            // wurden dieselben Namen ein zweites Mal angelegt ("2x Zuverlässigkeit, Demut" etc.). Daher
+            // vorab die bereits vorhandenen (type, name)-Paare des Nutzers laden und lokale Items, die
+            // serverseitig schon existieren, von diesem Insert ausschließen.
+            const { data: existingItems } = await sb.from('growth_items').select('type, name').eq('user_id', session.user.id);
+            const existingKeys = new Set((existingItems ?? []).map(i => `${i.type}::${i.name.trim().toLowerCase()}`));
             const itemsToInsert = localItems
-              .filter(i => groupIdMap[i.groupId])
+              .filter(i => groupIdMap[i.groupId] && !existingKeys.has(`${i.type}::${i.name.trim().toLowerCase()}`))
               .map((i, idx) => ({
                 user_id: session.user.id, type: i.type, group_id: groupIdMap[i.groupId],
                 name: i.name, xp: i.xp || 0, sort_order: idx,
@@ -170,7 +178,8 @@ export default function YuYuApp() {
             // "erledigt" markiert werden - sonst geht genau der Rest der Daten unwiderruflich verloren,
             // ohne dass ein erneuter Versuch beim nächsten Login noch stattfindet (das ist vermutlich
             // exakt das, was hier zum Datenverlust geführt hat: der Insert-Fehler wurde nie geprüft).
-            const unmatchedCount = localItems.length - itemsToInsert.length;
+            const unmatchedCount = localItems.filter(i => !groupIdMap[i.groupId]).length;
+            const alreadyExistingCount = localItems.filter(i => groupIdMap[i.groupId] && existingKeys.has(`${i.type}::${i.name.trim().toLowerCase()}`)).length;
             let insertError = null;
             if (itemsToInsert.length > 0) {
               ({ error: insertError } = await sb.from('growth_items').insert(itemsToInsert));
@@ -181,6 +190,9 @@ export default function YuYuApp() {
             } else {
               if (unmatchedCount > 0) {
                 console.error(`Migration: ${unmatchedCount} Item(s) konnten keiner migrierten Oberkategorie zugeordnet werden und wurden übersprungen.`);
+              }
+              if (alreadyExistingCount > 0) {
+                console.log(`Migration: ${alreadyExistingCount} Item(s) existierten serverseitig schon (gleicher Typ+Name) und wurden übersprungen.`);
               }
               localStorage.setItem(migrationFlagKey, 'true');
             }
